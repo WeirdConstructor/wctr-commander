@@ -1,0 +1,15 @@
+[package]
+name = "wcdemengine"
+version = "0.1.0"
+authors = ["Weird Constructor <weirdconstructor@gmail.com>"]
+edition = "2018"
+
+[dependencies]
+chrono = "0.4.6"
+
+[dependencies.sdl2]
+version="0.32"
+default-features=false
+features=["ttf","bundled"]
+#,"image","gfx","ttf"]
+#,"mixer"]
