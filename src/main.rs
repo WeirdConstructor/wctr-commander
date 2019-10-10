@@ -28,7 +28,7 @@ pub enum FileManagerSide {
 }
 
 pub struct FileManager<'a, 'b> {
-    draw_state:     DrawState<'a, 'b>,
+    gui_painter:    GUIPainter<'a, 'b>,
     left:           std::vec::Vec<Page>,
     right:          std::vec::Vec<Page>,
     active_side:    FileManagerSide,
@@ -88,24 +88,26 @@ impl<'a, 'b> FileManager<'a, 'b> {
                 pg.cache = Some(pg.fm_page.as_draw_page());
             }
 
-            let win_size = self.draw_state.canvas.window().size();
+            let win_size = self.gui_painter.canvas.window().size();
             let half_width = win_size.0 / 2;
-            self.draw_state.canvas.set_draw_color(NORM_BG_COLOR);
-            self.draw_state.canvas.fill_rect(Rect::new(0, 0, win_size.0, win_size.1));
-            self.draw_state.canvas.set_draw_color(DIVIDER_COLOR);
-            self.draw_state.canvas.draw_line(
+            self.gui_painter.canvas.set_draw_color(NORM_BG_COLOR);
+            self.gui_painter.canvas.fill_rect(Rect::new(0, 0, win_size.0, win_size.1))
+                .expect("filling rectangle");
+            self.gui_painter.canvas.set_draw_color(DIVIDER_COLOR);
+            self.gui_painter.canvas.draw_line(
                 Point::new(half_width as i32 + 1, 0),
-                Point::new(half_width as i32 + 1, win_size.1 as i32));
+                Point::new(half_width as i32 + 1, win_size.1 as i32))
+                .expect("drawing a line");
 
             let has_focus : bool =
                 0 <
-                self.draw_state.canvas.window().window_flags()
+                self.gui_painter.canvas.window().window_flags()
                 & (  (sdl2::sys::SDL_WindowFlags::SDL_WINDOW_INPUT_FOCUS as u32)
                    | (sdl2::sys::SDL_WindowFlags::SDL_WINDOW_MOUSE_FOCUS as u32));
 
             if pg.cache.is_some() {
                 let render_feedback =
-                    self.draw_state.draw_table(
+                    self.gui_painter.draw_table(
                         pg,
                         2, 0,
                         half_width as i32 - 2,
@@ -119,12 +121,12 @@ impl<'a, 'b> FileManager<'a, 'b> {
     }
 }
 
-struct DrawState<'a, 'b> {
+struct GUIPainter<'a, 'b> {
     canvas: sdl2::render::Canvas<sdl2::video::Window>,
     font: Rc<RefCell<sdl2::ttf::Font<'a, 'b>>>,
 }
 
-impl<'a, 'b> DrawState<'a, 'b> {
+impl<'a, 'b> GUIPainter<'a, 'b> {
     fn clear(&mut self) {
         self.canvas.set_draw_color(Color::RGB(255, 255, 255));
         self.canvas.clear();
@@ -213,7 +215,8 @@ impl<'a, 'b> DrawState<'a, 'b> {
         }
 
         self.canvas.set_draw_color(bg_color);
-        self.canvas.fill_rect(Rect::new(x, y, width as u32, row_height as u32));
+        self.canvas.fill_rect(Rect::new(x, y, width as u32, row_height as u32))
+            .expect("filling rectangle");
         draw_bg_text(
             &mut self.canvas,
             &mut self.font.borrow_mut(),
@@ -262,7 +265,8 @@ impl<'a, 'b> DrawState<'a, 'b> {
             self.canvas.set_draw_color(NORM_FG_COLOR);
             self.canvas.draw_line(
                 Point::new(x,         y_offs + (row_height - table.row_gap as i32)),
-                Point::new(x + width, y_offs + (row_height - table.row_gap as i32)));
+                Point::new(x + width, y_offs + (row_height - table.row_gap as i32)))
+                .expect("drawing a line");
 
             let mut y = y_offs + row_height;
 
@@ -329,7 +333,8 @@ fn draw_bg_text(canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
                 txt: &str) {
 
     canvas.set_draw_color(bg_color);
-    canvas.fill_rect(Rect::new(x, y, max_w as u32, h as u32));
+    canvas.fill_rect(Rect::new(x, y, max_w as u32, h as u32))
+        .expect("filling rectangle");
     draw_text(font, color, canvas, x, y, max_w, txt);
 }
 
@@ -358,7 +363,7 @@ pub fn main() -> Result<(), String> {
     font.set_kerning(true);
 
     let mut fm = FileManager {
-        draw_state: DrawState {
+        gui_painter: GUIPainter {
             canvas: canvas,
             font: Rc::new(RefCell::new(font)),
         },
@@ -392,13 +397,13 @@ pub fn main() -> Result<(), String> {
                 Event::KeyDown { keycode: Some(Keycode::L), .. } => {
                     fm.process_page_control(PageControl::Access);
                 },
-                Event::MouseButtonDown { x: x, y: y, .. } => {
+                Event::MouseButtonDown { x, y, .. } => {
                     fm.process_page_control(PageControl::Click((x, y)));
                 },
-                Event::TextInput { text: text, .. } => {
+                Event::TextInput { text, .. } => {
                     println!("TEXT: {}", text);
                 },
-                Event::MouseWheel { y: y, direction: dir, .. } => {
+                Event::MouseWheel { y, direction: dir, .. } => {
                     match dir {
                         sdl2::mouse::MouseWheelDirection::Normal => {
                             fm.process_page_control(PageControl::Scroll(-y));
@@ -440,9 +445,9 @@ pub fn main() -> Result<(), String> {
         println!("FO {},{},{}", frame_time, is_first, force_redraw);
 
         if is_first || force_redraw || frame_time >= 16 {
-            fm.draw_state.clear();
+            fm.gui_painter.clear();
             fm.redraw();
-            fm.draw_state.done();
+            fm.gui_painter.done();
             last_frame = Instant::now();
         }
 
