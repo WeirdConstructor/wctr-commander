@@ -35,7 +35,7 @@ pub struct Table {
     pub col_gap:    u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum PageControl {
     Refresh,
     Back,
@@ -53,6 +53,18 @@ pub struct RenderFeedback {
     pub start_rows:        (i32, i32),
     pub row_height:        i32,
     pub end_rows:          (i32, i32),
+    pub screen_pos:        (i32, i32),
+    pub screen_rect:       (u32, u32),
+}
+
+impl RenderFeedback {
+    pub fn is_inside_screen_rect(&self, x: i32, y: i32) -> bool {
+        let x1 = self.screen_pos.0;
+        let y1 = self.screen_pos.1;
+        let x2 = self.screen_rect.0 as i32 + x1;
+        let y2 = self.screen_rect.1 as i32 + y1;
+        return x >= x1 && y >= y1 && x < x2 && y < y2;
+    }
 }
 
 pub trait FmPage {
@@ -60,6 +72,7 @@ pub trait FmPage {
     fn as_draw_page(&self) -> Table;
     fn get_scroll_offs(&self) -> usize;
     fn do_control(&mut self, ctrl: PageControl);
+    fn is_inside_screen_rect(&self, x: i32, y: i32) -> bool;
     fn is_cursor_idx(&self, idx: usize) -> bool;
     fn is_selected(&self, idx: usize) -> bool;
     fn is_highlighted(&self, idx: usize) -> bool;

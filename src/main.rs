@@ -22,6 +22,34 @@ struct Page {
     cache:      Option<Table>,
 }
 
+impl Page {
+    fn draw(&mut self, gp: &mut GUIPainter, x: i32, y: i32, w: u32, h: u32, is_active: bool) {
+        if self.cache.is_none() || self.fm_page.needs_repage() {
+            self.cache = Some(self.fm_page.as_draw_page());
+        }
+
+        gp.canvas.set_draw_color(NORM_BG_COLOR);
+        gp.canvas.fill_rect(Rect::new(x, y, w, h))
+            .expect("filling rectangle");
+
+        let has_focus : bool =
+            0 <
+                gp.canvas.window().window_flags()
+                & (  (sdl2::sys::SDL_WindowFlags::SDL_WINDOW_INPUT_FOCUS as u32)
+                   | (sdl2::sys::SDL_WindowFlags::SDL_WINDOW_MOUSE_FOCUS as u32));
+
+        if self.cache.is_some() {
+            let render_feedback =
+                gp.draw_table(
+                    self, x + 2, y, w as i32 - 2, h as i32, has_focus, is_active);
+            Rc::get_mut(&mut self.fm_page)
+                .unwrap()
+                .set_render_feedback(render_feedback);
+        }
+    }
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
 pub enum FileManagerSide {
     Left,
     Right,
@@ -39,6 +67,7 @@ enum PanePos {
     RightTab,
 }
 
+
 impl<'a, 'b> FileManager<'a, 'b> {
     fn open_path_in(&mut self, path: &std::path::Path, pos: PanePos) {
         let ps = PathSheet::read(path).expect("No broken paths please");
@@ -54,18 +83,43 @@ impl<'a, 'b> FileManager<'a, 'b> {
         }
     }
 
-    fn process_page_control(&mut self, ctrl: PageControl) {
-        match self.active_side {
-            FileManagerSide::Left => {
-                if self.left.is_empty() { return; }
-                Rc::get_mut(&mut self.left.get_mut(0).unwrap().fm_page).unwrap()
-                    .do_control(ctrl);
-            },
-            FileManagerSide::Right => {
-                if self.right.is_empty() { return; }
-//                Rc::get_mut(self.right.get_mut(0).unwrap().fm_page).unwrap().do_control(ctrl);
-            },
-        };
+    fn toggle_active_side(&mut self) {
+        self.active_side =
+            match self.active_side {
+                FileManagerSide::Left => FileManagerSide::Right,
+                FileManagerSide::Right => FileManagerSide::Left,
+            };
+    }
+
+    fn process_page_control(&mut self, ctrl: PageControl, mouse: Option<(i32, i32)>) {
+        if let Some((x, y)) = mouse {
+            if !self.left.is_empty() {
+                let p = Rc::get_mut(&mut self.left.get_mut(0).unwrap().fm_page).unwrap();
+                if p.is_inside_screen_rect(x, y) {
+                    p.do_control(ctrl);
+                }
+            }
+            if !self.right.is_empty() {
+                let p = Rc::get_mut(&mut self.right.get_mut(0).unwrap().fm_page).unwrap();
+                if p.is_inside_screen_rect(x, y) {
+                    p.do_control(ctrl);
+                }
+            }
+
+        } else {
+            match self.active_side {
+                FileManagerSide::Left => {
+                    if self.left.is_empty() { return; }
+                    Rc::get_mut(&mut self.left.get_mut(0).unwrap().fm_page).unwrap()
+                        .do_control(ctrl);
+                },
+                FileManagerSide::Right => {
+                    if self.right.is_empty() { return; }
+                    Rc::get_mut(&mut self.right.get_mut(0).unwrap().fm_page).unwrap()
+                        .do_control(ctrl);
+                },
+            };
+        }
     }
 
     fn handle_resize(&mut self) {
@@ -81,42 +135,27 @@ impl<'a, 'b> FileManager<'a, 'b> {
     }
 
     fn redraw(&mut self) {
+        let win_size = self.gui_painter.canvas.window().size();
+        let half_width = win_size.0 / 2;
+
         if !self.left.is_empty() {
             let pg : &mut Page = self.left.get_mut(0).unwrap();
+            pg.draw(&mut self.gui_painter,
+                0, 0, half_width, win_size.1,
+                self.active_side == FileManagerSide::Left);
+        }
 
-            if pg.cache.is_none() || pg.fm_page.needs_repage() {
-                pg.cache = Some(pg.fm_page.as_draw_page());
-            }
+        self.gui_painter.canvas.set_draw_color(DIVIDER_COLOR);
+        self.gui_painter.canvas.draw_line(
+            Point::new(half_width as i32, 0),
+            Point::new(half_width as i32, win_size.1 as i32))
+            .expect("drawing a line");
 
-            let win_size = self.gui_painter.canvas.window().size();
-            let half_width = win_size.0 / 2;
-            self.gui_painter.canvas.set_draw_color(NORM_BG_COLOR);
-            self.gui_painter.canvas.fill_rect(Rect::new(0, 0, win_size.0, win_size.1))
-                .expect("filling rectangle");
-            self.gui_painter.canvas.set_draw_color(DIVIDER_COLOR);
-            self.gui_painter.canvas.draw_line(
-                Point::new(half_width as i32 + 1, 0),
-                Point::new(half_width as i32 + 1, win_size.1 as i32))
-                .expect("drawing a line");
-
-            let has_focus : bool =
-                0 <
-                self.gui_painter.canvas.window().window_flags()
-                & (  (sdl2::sys::SDL_WindowFlags::SDL_WINDOW_INPUT_FOCUS as u32)
-                   | (sdl2::sys::SDL_WindowFlags::SDL_WINDOW_MOUSE_FOCUS as u32));
-
-            if pg.cache.is_some() {
-                let render_feedback =
-                    self.gui_painter.draw_table(
-                        pg,
-                        2, 0,
-                        half_width as i32 - 2,
-                        win_size.1 as i32,
-                        has_focus);
-                Rc::get_mut(&mut pg.fm_page)
-                    .unwrap()
-                    .set_render_feedback(render_feedback);
-            }
+        if !self.right.is_empty() {
+            let pg : &mut Page = self.right.get_mut(0).unwrap();
+            pg.draw(&mut self.gui_painter,
+                half_width as i32, 0, half_width, win_size.1,
+                self.active_side == FileManagerSide::Right);
         }
     }
 }
@@ -182,6 +221,7 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
                       col_idx: i32,
                       row_idx: usize,
                       has_focus: bool,
+                      is_active: bool,
                       fm_page: &Rc<dyn FmPage>,
                       x: i32,
                       y: i32,
@@ -201,17 +241,29 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
             if col_idx % 2 == 0 { NORM_BG2_COLOR } else { NORM_BG3_COLOR }
         };
 
-        if has_focus && fm_page.is_cursor_idx(row_idx) {
-            bg_color = CURS_BG_COLOR;
-            fg_color = CURS_FG_COLOR;
+        let specially_marked_row =
+            if has_focus && fm_page.is_cursor_idx(row_idx) {
+                bg_color = CURS_BG_COLOR;
+                fg_color = CURS_FG_COLOR;
+                true
 
-        } else if fm_page.is_selected(row_idx) {
-            bg_color = SLCT_BG_COLOR;
-            fg_color = SLCT_FG_COLOR;
+            } else if fm_page.is_selected(row_idx) {
+                bg_color = SLCT_BG_COLOR;
+                fg_color = SLCT_FG_COLOR;
+                true
 
-        } else if fm_page.is_highlighted(row_idx) {
-            bg_color = HIGH_FG_COLOR;
-            fg_color = HIGH_FG_COLOR;
+            } else if fm_page.is_highlighted(row_idx) {
+                bg_color = HIGH_FG_COLOR;
+                fg_color = HIGH_FG_COLOR;
+                true
+            } else {
+                false
+            };
+
+        if specially_marked_row && !is_active {
+            bg_color.r = (bg_color.r as f32 * 0.6) as u8;
+            bg_color.g = (bg_color.g as f32 * 0.6) as u8;
+            bg_color.b = (bg_color.b as f32 * 0.6) as u8;
         }
 
         self.canvas.set_draw_color(bg_color);
@@ -232,7 +284,8 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
         y_offs: i32,
         table_width: i32,
         table_height: i32,
-        has_focus: bool) -> RenderFeedback {
+        has_focus: bool,
+        is_active: bool) -> RenderFeedback {
 
         let table = pg.cache.as_mut().unwrap();
 
@@ -279,7 +332,7 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
                 }
 
                 self.draw_table_row(
-                    row, col_idx as i32, row_idx, has_focus,
+                    row, col_idx as i32, row_idx, has_focus, is_active,
                     &pg.fm_page,
                     x, y,
                     *width, table.col_gap as i32, row_height);
@@ -294,6 +347,8 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
         let line_count = ((table_height - row_height) / row_height) as i32;
         RenderFeedback {
             // substract 1 row_height for title bar
+            screen_pos:  (x_offs, y_offs),
+            screen_rect: (table_width as u32, table_height as u32),
             recent_line_count: line_count as usize,
             row_offset: pg.fm_page.get_scroll_offs(),
             start_rows: (x_offs,
@@ -374,31 +429,37 @@ pub fn main() -> Result<(), String> {
 
     let pth = std::path::Path::new(".");
     fm.open_path_in(pth, PanePos::LeftTab);
+    let pth = std::path::Path::new("..");
+    fm.open_path_in(pth, PanePos::RightTab);
 
     let mut last_frame = Instant::now();
     let mut is_first = true;
     'running: loop {
         let mut force_redraw = false;
         let event = event_pump.wait_event_timeout(1000);
+        let mouse_state = event_pump.mouse_state();
         if let Some(event) = event {
             match event {
                 Event::Quit {..} | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
                     break 'running
                 },
+                Event::KeyDown { keycode: Some(Keycode::Tab), .. } => {
+                    fm.toggle_active_side();
+                },
                 Event::KeyDown { keycode: Some(Keycode::H), .. } => {
-                    fm.process_page_control(PageControl::Back);
+                    fm.process_page_control(PageControl::Back, None);
                 },
                 Event::KeyDown { keycode: Some(Keycode::J), .. } => {
-                    fm.process_page_control(PageControl::CursorDown);
+                    fm.process_page_control(PageControl::CursorDown, None);
                 },
                 Event::KeyDown { keycode: Some(Keycode::K), .. } => {
-                    fm.process_page_control(PageControl::CursorUp);
+                    fm.process_page_control(PageControl::CursorUp, None);
                 },
                 Event::KeyDown { keycode: Some(Keycode::L), .. } => {
-                    fm.process_page_control(PageControl::Access);
+                    fm.process_page_control(PageControl::Access, None);
                 },
                 Event::MouseButtonDown { x, y, .. } => {
-                    fm.process_page_control(PageControl::Click((x, y)));
+                    fm.process_page_control(PageControl::Click((x, y)), Some((x, y)));
                 },
                 Event::TextInput { text, .. } => {
                     println!("TEXT: {}", text);
@@ -406,11 +467,11 @@ pub fn main() -> Result<(), String> {
                 Event::MouseWheel { y, direction: dir, .. } => {
                     match dir {
                         sdl2::mouse::MouseWheelDirection::Normal => {
-                            fm.process_page_control(PageControl::Scroll(-y));
+                            fm.process_page_control(PageControl::Scroll(-y), Some((mouse_state.x(), mouse_state.y())));
                             println!("DIR NORMAL");
                         },
                         sdl2::mouse::MouseWheelDirection::Flipped => {
-                            fm.process_page_control(PageControl::Scroll(y));
+                            fm.process_page_control(PageControl::Scroll(y), Some((mouse_state.x(), mouse_state.y())));
                             println!("DIR FLOP");
                         },
                         _ => {}

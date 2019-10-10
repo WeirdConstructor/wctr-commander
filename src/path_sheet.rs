@@ -74,6 +74,8 @@ impl PathSheet {
             cursor_idx:     0,
             scroll_offset:  0,
             render_feedback: RenderFeedback {
+                screen_pos:        (0, 0),
+                screen_rect:       (0, 0),
                 recent_line_count: 0,
                 row_offset:        0,
                 start_rows:        (0, 0),
@@ -136,6 +138,10 @@ impl FmPage for PathSheet {
         self.render_feedback = fb;
     }
 
+    fn is_inside_screen_rect(&self, x: i32, y: i32) -> bool {
+        self.render_feedback.is_inside_screen_rect(x, y)
+    }
+
     fn do_control(&mut self, ctrl: PageControl) {
         match ctrl {
             PageControl::CursorDown => {
@@ -147,7 +153,6 @@ impl FmPage for PathSheet {
                 }
             },
             PageControl::Click((x, y)) => {
-                println!("CLICK {}, {} | {:?}", x, y, self.render_feedback);
                 let x1 = self.render_feedback.start_rows.0;
                 let x2 = self.render_feedback.end_rows.0;
                 let y1 = self.render_feedback.start_rows.1;
@@ -269,10 +274,26 @@ impl FmPage for PathSheet {
                 },
                 Column {
                     head: String::from("size"),
-                    size: ColumnSizing::TextWidth(String::from("MMMMMM")),
+                    size: ColumnSizing::TextWidth(String::from("MMMMMMMM")),
                     calc_size: None,
-                    rows: self.paths.iter().map(|_p| {
-                        StyleString { text: String::from("{???}"), style: Style::Default }
+                    rows: self.paths.iter().map(|p| {
+                        let text =
+                            if p.size >= 1024_u64.pow(4) {
+                                let rnd = 1024_u64.pow(4) - 1;
+                                format!("{:-4}  TB", (p.size + rnd) / 1024_u64.pow(4))
+                            } else if p.size >= 1024_u64.pow(3) {
+                                let rnd = 1024_u64.pow(3) - 1;
+                                format!("{:-4}  GB", (p.size + rnd) / 1024_u64.pow(3))
+                            } else if p.size >= 1024_u64.pow(2) {
+                                let rnd = 1024_u64.pow(2) - 1;
+                                format!("{:-4}  MB", (p.size + rnd) / 1024_u64.pow(2))
+                            } else if p.size >= 1024_u64.pow(1) {
+                                let rnd = 1024_u64.pow(1) - 1;
+                                format!("{:-4}  kB", (p.size + rnd) / 1024_u64.pow(1))
+                            } else {
+                                format!("{:-4}  B", p.size)
+                            };
+                        StyleString { text, style: Style::Default }
                     }).collect(),
                 },
             ],
