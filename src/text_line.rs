@@ -1,5 +1,5 @@
 
-struct TextInputLine {
+pub struct TextInputLine {
     history:        std::vec::Vec<String>,
     history_pos:    Option<u32>,
     cursor_pos:     usize,
