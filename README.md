@@ -1,7 +1,18 @@
 <img align="left" width="60" height="60" src="http://m8geil.de/data/git/wlambda/res/wlambda_logo_60.png">
 
-WCDemEngine - 2D Demo Engine written in Rust, using WLambda Scripting
-=====================================================================
+WCtr-Commander - A portable two column file manager
+===================================================
+
+This project aims to realize a portable file manager that works the same
+on Windows and Linux. The WLambda scripting language is used for extensibility
+and for GUI controls.
+
+The main GUI components are:
+
+- 2 tabs or columns for displaying directory contents
+- A small log for status messages
+- Optional progressbars
+- A command line text input for wlambda statements
 
 # License
 
