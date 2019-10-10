@@ -119,55 +119,6 @@ impl<'a, 'b> FileManager<'a, 'b> {
     }
 }
 
-/*
-
-Design ideas:
-
-Basic building blocks:
-
-    - Timeline, depending on seconds?
-    - Signal-Generator-Nodes, that get T as input and output a float
-        - Constant
-        - Interpolation/Tween
-            - linear, smoothstep, sin/cos
-        - random numbers, interpolated maybe?
-        - start time
-        - end time
-        - initial value
-    - Signal Mod Nodes
-        - Mapper node of 1 value to something inside a range
-    - Draw nodes:
-        - Pixel
-            - Input
-                - HSV Color
-                - X/Y
-        - Rectangle
-            - Input
-                - HSV Color
-                - X/Y
-                - W/H | X2/Y2
-        - Filled Rectangle
-            - Input
-                - HSV Color
-                - X/Y
-                - W/H | X2/Y2
-        - Sprite
-            - X/Y
-            - W/H
-            - Blend Mode
-            - Color Modifier
-    - Controls
-        - show time
-        - single time step
-        - restart
-        - set loop start/end
-        - play/stop
-        - reload graph by discarding the nodes and reevaluating the script
-            - do that automatically when the mtime of the script
-              changes.
-    - Tracker Input
-*/
-
 struct DrawState<'a, 'b> {
     canvas: sdl2::render::Canvas<sdl2::video::Window>,
     font: Rc<RefCell<sdl2::ttf::Font<'a, 'b>>>,
