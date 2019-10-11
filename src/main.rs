@@ -434,25 +434,25 @@ pub fn main() -> Result<(), String> {
         log: LogSheet::new(),
     };
 
-    fm.log.append_msg(String::from("FOo bar 1"));
-    fm.log.append_msg(String::from("FOo bar 2"));
-    fm.log.append_msg(String::from("FOo bar 3"));
-    fm.log.append_msg(String::from("FOo bar 4"));
-    fm.log.append_msg(String::from("FOo bar 5"));
-    fm.log.append_msg(String::from("FOo bar 6"));
-    fm.log.append_msg(String::from("FOo bar 7"));
-    fm.log.append_msg(String::from("FOo bar 8"));
-    fm.log.append_msg(String::from("FOo bar 9"));
-    fm.log.append_msg(String::from("FOo bar 10"));
-    fm.log.append_msg(String::from("FOo bar 11"));
-    fm.log.append_msg(String::from("FOo bar 12"));
-    fm.log.append_msg(String::from("FOo bar 13"));
-    fm.log.append_msg(String::from("FOo bar 14"));
-    fm.log.append_msg(String::from("FOo bar 15"));
-    fm.log.append_msg(String::from("FOo bar 16"));
-    fm.log.append_msg(String::from("FOo bar 17"));
-    fm.log.append_msg(String::from("FOo bar 18"));
-    fm.log.append_msg(String::from("FOo bar 19"));
+    fm.log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 1"));
+    fm.log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 2"));
+    fm.log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 3"));
+    fm.log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 4"));
+    fm.log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 5"));
+    fm.log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 6"));
+    fm.log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 7"));
+    fm.log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 8"));
+    fm.log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 9"));
+    fm.log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 10"));
+    fm.log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 11"));
+    fm.log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 12"));
+    fm.log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 13"));
+    fm.log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 14"));
+    fm.log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 15"));
+    fm.log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 16"));
+    fm.log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 17"));
+    fm.log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 18"));
+    fm.log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 19"));
 
     let pth = std::path::Path::new(".");
     fm.open_path_in(pth, PanePos::LeftTab);

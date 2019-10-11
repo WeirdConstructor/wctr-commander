@@ -88,11 +88,12 @@ impl PageCursor {
         let recent_linecnt = render_fb.recent_line_count;
 
         if self.cursor_scroll_bottom {
-            if self.cursor_idx > recent_linecnt {
-                self.scroll_offset = self.cursor_idx - recent_linecnt;
-            } else {
-                self.scroll_offset = self.cursor_idx;
-            }
+            self.scroll_offset = row_count - recent_linecnt;
+//            if self.cursor_idx > recent_linecnt {
+//                self.scroll_offset = self.cursor_idx - recent_linecnt;
+//            } else {
+//                self.scroll_offset = self.cursor_idx;
+//            }
         } else if recent_linecnt <= 2 * SCROLL_PADDING {
             if self.cursor_idx > 0 {
                 self.scroll_offset = self.cursor_idx - 1;
