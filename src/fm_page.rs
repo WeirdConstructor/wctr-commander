@@ -1,3 +1,5 @@
+use std::rc::Rc;
+use std::cell::RefCell;
 
 #[derive(Debug)]
 pub enum Style {
@@ -33,6 +35,23 @@ pub struct Table {
     pub columns:    std::vec::Vec<Column>,
     pub row_gap:    u32,
     pub col_gap:    u32,
+}
+
+pub type TableRef = Rc<RefCell<Table>>;
+
+impl Table {
+    pub fn new() -> Self {
+        Table {
+            title: String::from(""),
+            columns: Vec::new(),
+            row_gap: 0,
+            col_gap: 0,
+        }
+    }
+
+    pub fn new_ref() -> Rc<RefCell<Self>> {
+        Rc::new(RefCell::new(Self::new()))
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -83,7 +102,7 @@ impl RenderFeedback {
 
 pub trait FmPage {
     fn len(&self) -> usize;
-    fn as_draw_page(&self) -> Table;
+    fn as_drawable_table(&mut self) -> Rc<RefCell<Table>>;
     fn get_scroll_offs(&self) -> usize;
     fn do_control(&mut self, ctrl: PageControl);
     fn is_inside_screen_rect(&self, x: i32, y: i32) -> bool;

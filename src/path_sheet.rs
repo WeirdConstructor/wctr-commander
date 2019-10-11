@@ -38,6 +38,7 @@ pub struct PathSheet {
     pub highlight:          std::collections::HashSet<usize>,
     pub render_feedback:    RenderFeedback,
     pub cursor:             PageCursor,
+    pub rendered:           TableRef,
 }
 
 impl PathSheet {
@@ -75,6 +76,7 @@ impl PathSheet {
             highlight:      std::collections::HashSet::new(),
             paths_dirty:    false,
             state_dirty:    false,
+            rendered:       Table::new_ref(),
         })
     }
 }
@@ -135,69 +137,74 @@ impl FmPage for PathSheet {
         self.cursor.do_control(self.len(), &self.render_feedback, ctrl);
     }
 
-    fn as_draw_page(&self) -> Table {
-        Table {
-            title: String::from(self.base.to_string_lossy()),
-            row_gap: 2,
-            col_gap: 4,
-            columns: vec![
-                Column {
-                    head: String::from("name"),
-                    size: ColumnSizing::ExpandFract(1),
-                    calc_size: None,
-                    rows: self.paths.iter().map(|p| {
-                        let mut path_postfix = String::from("");
-                        if let PathRecordType::Dir = p.path_type {
-                            path_postfix = std::path::MAIN_SEPARATOR.to_string();
-                        };
-
-                        StyleString {
-                            text: String::from(p.path.file_name()
-                                                .unwrap_or(std::ffi::OsStr::new(""))
-                                                .to_string_lossy()) + &path_postfix,
-                            style: match p.path_type {
-                                PathRecordType::File    => Style::File,
-                                PathRecordType::Dir     => Style::Dir,
-                                PathRecordType::SymLink => Style::Special,
-                            }
-                        }
-                    }).collect(),
-                },
-                Column {
-                    head: String::from("time"),
-                    size: ColumnSizing::TextWidth(String::from("MMMM-MM-MM MM:MM:MM")),
-                    calc_size: None,
-                    rows: self.paths.iter().map(|p| {
-                        let dt : DateTime<Utc> = p.mtime.into();
-                        StyleString { text: format!("{}", dt.format("%Y-%m-%d %H:%M:%S")), style: Style::Default }
-                    }).collect(),
-                },
-                Column {
-                    head: String::from("size"),
-                    size: ColumnSizing::TextWidth(String::from("MMMMMMMM")),
-                    calc_size: None,
-                    rows: self.paths.iter().map(|p| {
-                        let text =
-                            if p.size >= 1024_u64.pow(4) {
-                                let rnd = 1024_u64.pow(4) - 1;
-                                format!("{:-4}  TB", (p.size + rnd) / 1024_u64.pow(4))
-                            } else if p.size >= 1024_u64.pow(3) {
-                                let rnd = 1024_u64.pow(3) - 1;
-                                format!("{:-4}  GB", (p.size + rnd) / 1024_u64.pow(3))
-                            } else if p.size >= 1024_u64.pow(2) {
-                                let rnd = 1024_u64.pow(2) - 1;
-                                format!("{:-4}  MB", (p.size + rnd) / 1024_u64.pow(2))
-                            } else if p.size >= 1024_u64.pow(1) {
-                                let rnd = 1024_u64.pow(1) - 1;
-                                format!("{:-4}  kB", (p.size + rnd) / 1024_u64.pow(1))
-                            } else {
-                                format!("{:-4}  B", p.size)
-                            };
-                        StyleString { text, style: Style::Default }
-                    }).collect(),
-                },
-            ],
+    fn as_drawable_table(&mut self) -> TableRef {
+        if !self.needs_repage() {
+            return self.rendered.clone();
         }
+        self.rendered =
+            std::rc::Rc::new(std::cell::RefCell::new(Table {
+                title: String::from(self.base.to_string_lossy()),
+                row_gap: 2,
+                col_gap: 4,
+                columns: vec![
+                    Column {
+                        head: String::from("name"),
+                        size: ColumnSizing::ExpandFract(1),
+                        calc_size: None,
+                        rows: self.paths.iter().map(|p| {
+                            let mut path_postfix = String::from("");
+                            if let PathRecordType::Dir = p.path_type {
+                                path_postfix = std::path::MAIN_SEPARATOR.to_string();
+                            };
+
+                            StyleString {
+                                text: String::from(p.path.file_name()
+                                                    .unwrap_or(std::ffi::OsStr::new(""))
+                                                    .to_string_lossy()) + &path_postfix,
+                                style: match p.path_type {
+                                    PathRecordType::File    => Style::File,
+                                    PathRecordType::Dir     => Style::Dir,
+                                    PathRecordType::SymLink => Style::Special,
+                                }
+                            }
+                        }).collect(),
+                    },
+                    Column {
+                        head: String::from("time"),
+                        size: ColumnSizing::TextWidth(String::from("MMMM-MM-MM MM:MM:MM")),
+                        calc_size: None,
+                        rows: self.paths.iter().map(|p| {
+                            let dt : DateTime<Utc> = p.mtime.into();
+                            StyleString { text: format!("{}", dt.format("%Y-%m-%d %H:%M:%S")), style: Style::Default }
+                        }).collect(),
+                    },
+                    Column {
+                        head: String::from("size"),
+                        size: ColumnSizing::TextWidth(String::from("MMMMMMMM")),
+                        calc_size: None,
+                        rows: self.paths.iter().map(|p| {
+                            let text =
+                                if p.size >= 1024_u64.pow(4) {
+                                    let rnd = 1024_u64.pow(4) - 1;
+                                    format!("{:-4}  TB", (p.size + rnd) / 1024_u64.pow(4))
+                                } else if p.size >= 1024_u64.pow(3) {
+                                    let rnd = 1024_u64.pow(3) - 1;
+                                    format!("{:-4}  GB", (p.size + rnd) / 1024_u64.pow(3))
+                                } else if p.size >= 1024_u64.pow(2) {
+                                    let rnd = 1024_u64.pow(2) - 1;
+                                    format!("{:-4}  MB", (p.size + rnd) / 1024_u64.pow(2))
+                                } else if p.size >= 1024_u64.pow(1) {
+                                    let rnd = 1024_u64.pow(1) - 1;
+                                    format!("{:-4}  kB", (p.size + rnd) / 1024_u64.pow(1))
+                                } else {
+                                    format!("{:-4}  B", p.size)
+                                };
+                            StyleString { text, style: Style::Default }
+                        }).collect(),
+                    },
+                ],
+            }));
+        return self.rendered.clone();
     }
 }
 

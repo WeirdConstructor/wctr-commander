@@ -13,41 +13,28 @@ mod cursor;
 mod fm_page;
 mod path_sheet;
 mod text_line;
+mod log_sheet;
 
+use log_sheet::*;
 use path_sheet::*;
 use fm_page::*;
 use defs::*;
 
-struct Page {
-    fm_page:    Rc<dyn FmPage>,
-    cache:      Option<Table>,
-}
+fn draw_fm_page(fm_page: &mut dyn FmPage, gp: &mut GUIPainter, x: i32, y: i32, w: u32, h: u32, is_active: bool) {
+    gp.canvas.set_draw_color(NORM_BG_COLOR);
+    gp.canvas.fill_rect(Rect::new(x, y, w, h))
+        .expect("filling rectangle");
 
-impl Page {
-    fn draw(&mut self, gp: &mut GUIPainter, x: i32, y: i32, w: u32, h: u32, is_active: bool) {
-        if self.cache.is_none() || self.fm_page.needs_repage() {
-            self.cache = Some(self.fm_page.as_draw_page());
-        }
+    let has_focus : bool =
+        0 <
+            gp.canvas.window().window_flags()
+            & (  (sdl2::sys::SDL_WindowFlags::SDL_WINDOW_INPUT_FOCUS as u32)
+               | (sdl2::sys::SDL_WindowFlags::SDL_WINDOW_MOUSE_FOCUS as u32));
 
-        gp.canvas.set_draw_color(NORM_BG_COLOR);
-        gp.canvas.fill_rect(Rect::new(x, y, w, h))
-            .expect("filling rectangle");
-
-        let has_focus : bool =
-            0 <
-                gp.canvas.window().window_flags()
-                & (  (sdl2::sys::SDL_WindowFlags::SDL_WINDOW_INPUT_FOCUS as u32)
-                   | (sdl2::sys::SDL_WindowFlags::SDL_WINDOW_MOUSE_FOCUS as u32));
-
-        if self.cache.is_some() {
-            let render_feedback =
-                gp.draw_table(
-                    self, x + 2, y, w as i32 - 2, h as i32, has_focus, is_active);
-            Rc::get_mut(&mut self.fm_page)
-                .unwrap()
-                .set_render_feedback(render_feedback);
-        }
-    }
+    let render_feedback =
+        gp.draw_table(
+            fm_page, x + 2, y, w as i32 - 2, h as i32, has_focus, is_active);
+    fm_page.set_render_feedback(render_feedback);
 }
 
 #[derive(Debug, PartialEq, Copy, Clone)]
@@ -58,8 +45,9 @@ pub enum FileManagerSide {
 
 pub struct FileManager<'a, 'b> {
     gui_painter:    GUIPainter<'a, 'b>,
-    left:           std::vec::Vec<Page>,
-    right:          std::vec::Vec<Page>,
+    left:           std::vec::Vec<PathSheet>,
+    right:          std::vec::Vec<PathSheet>,
+    log:            LogSheet,
     active_side:    FileManagerSide,
 }
 
@@ -71,16 +59,11 @@ enum PanePos {
 
 impl<'a, 'b> FileManager<'a, 'b> {
     fn open_path_in(&mut self, path: &std::path::Path, pos: PanePos) {
-        let ps = PathSheet::read(path).expect("No broken paths please");
-        let r = Rc::new(ps);
-        let mut pg = Page {
-            fm_page: r,
-            cache: None,
-        };
-        Rc::get_mut(&mut pg.fm_page).unwrap().sort_by_column(0);
+        let mut ps = PathSheet::read(path).expect("No broken paths please");
+        ps.sort_by_column(0);
         match pos {
-            PanePos::LeftTab  => self.left.push(pg),
-            PanePos::RightTab => self.right.push(pg),
+            PanePos::LeftTab  => self.left.push(ps),
+            PanePos::RightTab => self.right.push(ps),
         }
     }
 
@@ -95,29 +78,31 @@ impl<'a, 'b> FileManager<'a, 'b> {
     fn process_page_control(&mut self, ctrl: PageControl, mouse: Option<(i32, i32)>) {
         if let Some((x, y)) = mouse {
             if !self.left.is_empty() {
-                let p = Rc::get_mut(&mut self.left.get_mut(0).unwrap().fm_page).unwrap();
-                if p.is_inside_screen_rect(x, y) {
-                    p.do_control(ctrl);
+                let fm_page : &mut dyn FmPage = self.left.get_mut(0).unwrap();
+                if fm_page.is_inside_screen_rect(x, y) {
+                    fm_page.do_control(ctrl);
                 }
             }
             if !self.right.is_empty() {
-                let p = Rc::get_mut(&mut self.right.get_mut(0).unwrap().fm_page).unwrap();
-                if p.is_inside_screen_rect(x, y) {
-                    p.do_control(ctrl);
+                let fm_page : &mut dyn FmPage = self.right.get_mut(0).unwrap();
+                if fm_page.is_inside_screen_rect(x, y) {
+                    fm_page.do_control(ctrl);
                 }
+            }
+            let fm_page : &mut dyn FmPage = &mut self.log;
+            if fm_page.is_inside_screen_rect(x, y) {
+                fm_page.do_control(ctrl);
             }
 
         } else {
             match self.active_side {
                 FileManagerSide::Left => {
                     if self.left.is_empty() { return; }
-                    Rc::get_mut(&mut self.left.get_mut(0).unwrap().fm_page).unwrap()
-                        .do_control(ctrl);
+                    self.left.get_mut(0).unwrap().do_control(ctrl);
                 },
                 FileManagerSide::Right => {
                     if self.right.is_empty() { return; }
-                    Rc::get_mut(&mut self.right.get_mut(0).unwrap().fm_page).unwrap()
-                        .do_control(ctrl);
+                    self.right.get_mut(0).unwrap().do_control(ctrl);
                 },
             };
         }
@@ -125,24 +110,30 @@ impl<'a, 'b> FileManager<'a, 'b> {
 
     fn handle_resize(&mut self) {
         if !self.left.is_empty() {
-            let pg : &mut Page = self.left.get_mut(0).unwrap();
-            Rc::get_mut(&mut pg.fm_page).unwrap().do_control(PageControl::Refresh);
+            let fm_page : &mut dyn FmPage = self.left.get_mut(0).unwrap();
+            fm_page.do_control(PageControl::Refresh);
         }
 
         if !self.right.is_empty() {
-            let pg : &mut Page = self.right.get_mut(0).unwrap();
-            Rc::get_mut(&mut pg.fm_page).unwrap().do_control(PageControl::Refresh);
+            let fm_page : &mut dyn FmPage = self.right.get_mut(0).unwrap();
+            fm_page.do_control(PageControl::Refresh);
         }
+
+        self.log.do_control(PageControl::Refresh);
     }
 
     fn redraw(&mut self) {
         let win_size = self.gui_painter.canvas.window().size();
         let half_width = win_size.0 / 2;
 
+        let log_height = win_size.1 / 4;
+        let tab_height = win_size.1 - log_height;
+        let log_offs_y = tab_height as i32;
+
         if !self.left.is_empty() {
-            let pg : &mut Page = self.left.get_mut(0).unwrap();
-            pg.draw(&mut self.gui_painter,
-                0, 0, half_width, win_size.1,
+            let fm_page : &mut dyn FmPage = self.left.get_mut(0).unwrap();
+            draw_fm_page(fm_page, &mut self.gui_painter,
+                0, 0, half_width, tab_height,
                 self.active_side == FileManagerSide::Left);
         }
 
@@ -153,11 +144,16 @@ impl<'a, 'b> FileManager<'a, 'b> {
             .expect("drawing a line");
 
         if !self.right.is_empty() {
-            let pg : &mut Page = self.right.get_mut(0).unwrap();
-            pg.draw(&mut self.gui_painter,
-                half_width as i32, 0, half_width, win_size.1,
+            let fm_page : &mut dyn FmPage = self.right.get_mut(0).unwrap();
+            draw_fm_page(fm_page, &mut self.gui_painter,
+                half_width as i32, 0, half_width, tab_height,
                 self.active_side == FileManagerSide::Right);
         }
+
+        let fm_page : &mut dyn FmPage = &mut self.log;
+        draw_fm_page(fm_page, &mut self.gui_painter,
+            0, log_offs_y, win_size.0, log_height,
+            true);
     }
 }
 
@@ -189,7 +185,7 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
         }
     }
 
-    fn calc_table_width_chars(&self, table_width: i32) {
+    fn calc_table_width_chars(&self, table_width: i32) -> usize {
         let tsize = self.font.borrow().size_of("m");
         let mut char_width_in_px : usize = tsize.unwrap_or((0, 0)).0 as usize;
         if char_width_in_px == 0 {
@@ -232,7 +228,7 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
                       row_idx: usize,
                       has_focus: bool,
                       is_active: bool,
-                      fm_page: &Rc<dyn FmPage>,
+                      fm_page: &mut dyn FmPage,
                       x: i32,
                       y: i32,
                       width: i32,
@@ -289,7 +285,7 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
 
     fn draw_table(
         &mut self,
-        pg: &mut Page,
+        fm_page: &mut dyn FmPage,
         x_offs: i32,
         y_offs: i32,
         table_width: i32,
@@ -297,26 +293,27 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
         has_focus: bool,
         is_active: bool) -> RenderFeedback {
 
-        let table = pg.cache.as_mut().unwrap();
+        let table = fm_page.as_drawable_table();
+        let mut table_ref = table.borrow_mut();
 
-        self.calc_column_text_widths(table);
-        let cols = self.calc_column_width(table, table_width, 0);
+        self.calc_column_text_widths(&mut table_ref);
+        let cols = self.calc_column_width(&mut table_ref, table_width, 0);
         let width_in_m_chars = self.calc_table_width_chars(table_width);
 
-        let row_height = self.font.borrow().height() + table.row_gap as i32;
+        let row_height = self.font.borrow().height() + table_ref.row_gap as i32;
 
         draw_bg_text(
             &mut self.canvas, &mut self.font.borrow_mut(),
             NORM_FG_COLOR, NORM_BG_COLOR,
             x_offs, y_offs, table_width, row_height,
-            &table.title);
+            &table_ref.title);
 
         let y_offs = y_offs + row_height;
         let row_area_height = table_height - 2 * row_height;
         let row_count = (row_area_height / row_height) as usize;
 
         let mut x = x_offs;
-        for width_and_col in cols.iter().enumerate().zip(table.columns.iter()) {
+        for width_and_col in cols.iter().enumerate().zip(table_ref.columns.iter()) {
             let col_idx = (width_and_col.0).0;
             let width   = (width_and_col.0).1;
             let column  = width_and_col.1;
@@ -325,26 +322,26 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
             draw_bg_text(
                 &mut self.canvas, &mut self.font.borrow_mut(),
                 NORM_FG_COLOR, NORM_BG_COLOR,
-                x, y_offs, *width - table.col_gap as i32, row_height,
+                x, y_offs, *width - table_ref.col_gap as i32, row_height,
                 &column.head);
 
             self.canvas.set_draw_color(NORM_FG_COLOR);
             self.canvas.draw_line(
-                Point::new(x,         y_offs + (row_height - table.row_gap as i32)),
-                Point::new(x + width, y_offs + (row_height - table.row_gap as i32)))
+                Point::new(x,         y_offs + (row_height - table_ref.row_gap as i32)),
+                Point::new(x + width, y_offs + (row_height - table_ref.row_gap as i32)))
                 .expect("drawing a line");
 
             let mut y = y_offs + row_height;
 
             for (row_idx, row) in column.rows.iter()
                                     .enumerate()
-                                    .skip(pg.fm_page.get_scroll_offs())
+                                    .skip(fm_page.get_scroll_offs())
                                     .take(row_count) {
                 self.draw_table_row(
                     row, col_idx as i32, row_idx, has_focus, is_active,
-                    &pg.fm_page,
+                    fm_page,
                     x, y,
-                    *width, table.col_gap as i32, row_height);
+                    *width, table_ref.col_gap as i32, row_height);
 
                 y += row_height;
             }
@@ -358,7 +355,7 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
             screen_pos:  (x_offs, y_offs),
             screen_rect: (table_width as u32, table_height as u32),
             recent_line_count: row_count as usize,
-            row_offset: pg.fm_page.get_scroll_offs(),
+            row_offset: fm_page.get_scroll_offs(),
             start_rows: (x_offs,
                          y_offs + row_height),
             row_height,
@@ -434,7 +431,28 @@ pub fn main() -> Result<(), String> {
         active_side: FileManagerSide::Left,
         left: Vec::new(),
         right: Vec::new(),
+        log: LogSheet::new(),
     };
+
+    fm.log.append_msg(String::from("FOo bar 1"));
+    fm.log.append_msg(String::from("FOo bar 2"));
+    fm.log.append_msg(String::from("FOo bar 3"));
+    fm.log.append_msg(String::from("FOo bar 4"));
+    fm.log.append_msg(String::from("FOo bar 5"));
+    fm.log.append_msg(String::from("FOo bar 6"));
+    fm.log.append_msg(String::from("FOo bar 7"));
+    fm.log.append_msg(String::from("FOo bar 8"));
+    fm.log.append_msg(String::from("FOo bar 9"));
+    fm.log.append_msg(String::from("FOo bar 10"));
+    fm.log.append_msg(String::from("FOo bar 11"));
+    fm.log.append_msg(String::from("FOo bar 12"));
+    fm.log.append_msg(String::from("FOo bar 13"));
+    fm.log.append_msg(String::from("FOo bar 14"));
+    fm.log.append_msg(String::from("FOo bar 15"));
+    fm.log.append_msg(String::from("FOo bar 16"));
+    fm.log.append_msg(String::from("FOo bar 17"));
+    fm.log.append_msg(String::from("FOo bar 18"));
+    fm.log.append_msg(String::from("FOo bar 19"));
 
     let pth = std::path::Path::new(".");
     fm.open_path_in(pth, PanePos::LeftTab);
@@ -512,7 +530,7 @@ pub fn main() -> Result<(), String> {
         }
 
         let frame_time = last_frame.elapsed().as_millis();
-        println!("FO {},{},{}", frame_time, is_first, force_redraw);
+        //d// println!("FO {},{},{}", frame_time, is_first, force_redraw);
 
         if is_first || force_redraw || frame_time >= 16 {
             fm.gui_painter.clear();

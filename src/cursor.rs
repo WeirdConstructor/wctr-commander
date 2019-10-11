@@ -4,6 +4,7 @@ use crate::fm_page::PageControl;
 const SCROLL_PADDING : usize = 5;
 
 pub struct PageCursor {
+    pub cursor_scroll_bottom: bool,
     pub cursor_idx:         usize,
     pub scroll_offset:      usize,
 }
@@ -11,9 +12,14 @@ pub struct PageCursor {
 impl PageCursor {
     pub fn new() -> Self {
         PageCursor {
-            cursor_idx:     0,
-            scroll_offset:  0,
+            cursor_scroll_bottom:   false,
+            cursor_idx:             0,
+            scroll_offset:          0,
         }
+    }
+
+    pub fn enable_fixed_bottom_scroll(&mut self) {
+        self.cursor_scroll_bottom = true;
     }
 
     pub fn do_control(&mut self,
@@ -81,7 +87,13 @@ impl PageCursor {
 
         let recent_linecnt = render_fb.recent_line_count;
 
-        if recent_linecnt <= 2 * SCROLL_PADDING {
+        if self.cursor_scroll_bottom {
+            if self.cursor_idx > recent_linecnt {
+                self.scroll_offset = self.cursor_idx - recent_linecnt;
+            } else {
+                self.scroll_offset = self.cursor_idx;
+            }
+        } else if recent_linecnt <= 2 * SCROLL_PADDING {
             if self.cursor_idx > 0 {
                 self.scroll_offset = self.cursor_idx - 1;
             } else {
