@@ -9,6 +9,7 @@ use std::cell::RefCell;
 use std::time::{Instant};
 
 mod defs;
+mod cursor;
 mod fm_page;
 mod path_sheet;
 mod text_line;
@@ -301,6 +302,8 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
             &table.title);
 
         let y_offs = y_offs + row_height;
+        let row_area_height = table_height - 2 * row_height;
+        let row_count = (row_area_height / row_height) as usize;
 
         let mut x = x_offs;
         for width_and_col in cols.iter().enumerate().zip(table.columns.iter()) {
@@ -325,12 +328,8 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
 
             for (row_idx, row) in column.rows.iter()
                                     .enumerate()
-                                    .skip(pg.fm_page.get_scroll_offs()) {
-
-                if (y - y_offs) + row_height > table_height {
-                    break;
-                }
-
+                                    .skip(pg.fm_page.get_scroll_offs())
+                                    .take(row_count) {
                 self.draw_table_row(
                     row, col_idx as i32, row_idx, has_focus, is_active,
                     &pg.fm_page,
@@ -344,18 +343,17 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
             //d// println!("X= {}", x);
         }
 
-        let line_count = ((table_height - row_height) / row_height) as i32;
         RenderFeedback {
             // substract 1 row_height for title bar
             screen_pos:  (x_offs, y_offs),
             screen_rect: (table_width as u32, table_height as u32),
-            recent_line_count: line_count as usize,
+            recent_line_count: row_count as usize,
             row_offset: pg.fm_page.get_scroll_offs(),
             start_rows: (x_offs,
                          y_offs + row_height),
             row_height,
             end_rows:   (x_offs + table_width,
-                         y_offs + row_height + line_count as i32 * row_height),
+                         y_offs + row_height + row_count as i32 * row_height),
         }
     }
 }

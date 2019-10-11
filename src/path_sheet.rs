@@ -1,6 +1,7 @@
 use chrono::DateTime;
 use chrono::offset::Utc;
 use crate::fm_page::*;
+use crate::cursor::PageCursor;
 use std::fs;
 
 #[derive(Debug)]
@@ -33,11 +34,10 @@ pub struct PathSheet {
     pub paths:              std::vec::Vec<PathRecord>,
     pub paths_dirty:        bool,
     pub state_dirty:        bool,
-    pub cursor_idx:         usize,
-    pub scroll_offset:      usize,
     pub selection:          std::collections::HashSet<usize>,
     pub highlight:          std::collections::HashSet<usize>,
     pub render_feedback:    RenderFeedback,
+    pub cursor:             PageCursor,
 }
 
 const SCROLL_PADDING : usize = 5;
@@ -71,8 +71,6 @@ impl PathSheet {
         Ok(PathSheet {
             base:           path.to_path_buf(),
             paths:          sheet_paths,
-            cursor_idx:     0,
-            scroll_offset:  0,
             render_feedback: RenderFeedback {
                 screen_pos:        (0, 0),
                 screen_rect:       (0, 0),
@@ -82,6 +80,7 @@ impl PathSheet {
                 row_height:        0,
                 end_rows:          (0, 0),
             },
+            cursor:         PageCursor::new(),
             selection:      std::collections::HashSet::new(),
             highlight:      std::collections::HashSet::new(),
             paths_dirty:    false,
@@ -92,8 +91,8 @@ impl PathSheet {
 
 impl FmPage for PathSheet {
     fn len(&self) -> usize { self.paths.len() }
-    fn get_scroll_offs(&self) -> usize { self.scroll_offset }
-    fn is_cursor_idx(&self, idx: usize) -> bool { self.cursor_idx == idx }
+    fn get_scroll_offs(&self) -> usize { self.cursor.scroll_offset }
+    fn is_cursor_idx(&self, idx: usize) -> bool { self.cursor.is_cursor_idx(idx) }
     fn is_selected(&self, idx: usize) -> bool { self.selection.get(&idx).is_some() }
     fn is_highlighted(&self, idx: usize) -> bool { self.highlight.get(&idx).is_some() }
     fn needs_repage(&self) -> bool { self.paths_dirty }
@@ -143,96 +142,7 @@ impl FmPage for PathSheet {
     }
 
     fn do_control(&mut self, ctrl: PageControl) {
-        match ctrl {
-            PageControl::CursorDown => {
-                self.cursor_idx += 1;
-            },
-            PageControl::CursorUp => {
-                if self.cursor_idx > 0 {
-                    self.cursor_idx -= 1;
-                }
-            },
-            PageControl::Click((x, y)) => {
-                let x1 = self.render_feedback.start_rows.0;
-                let x2 = self.render_feedback.end_rows.0;
-                let y1 = self.render_feedback.start_rows.1;
-                let y2 = self.render_feedback.end_rows.1;
-
-                if !(x >= x1 && x <= x2 && y >= y1 && y <= y2) {
-                    return;
-                }
-
-                let y = y - y1;
-                let row = y / self.render_feedback.row_height;
-                self.cursor_idx = self.render_feedback.row_offset + row as usize;
-            },
-            PageControl::Scroll(amount) => {
-                println!("SCROLL {}", amount);
-                let amount = amount * SCROLL_PADDING as i32;
-                if amount < 0 && self.scroll_offset < (-amount) as usize {
-                    self.scroll_offset = 0;
-
-                } else if amount < 0 {
-                    self.scroll_offset -= (-amount) as usize;
-
-                } else {
-                    self.scroll_offset += amount as usize;
-                }
-
-                if self.len() <= self.render_feedback.recent_line_count {
-                    self.scroll_offset = 0;
-                } else {
-                    if self.scroll_offset > (self.len() - self.render_feedback.recent_line_count) {
-                        self.scroll_offset = self.len() - self.render_feedback.recent_line_count;
-                    }
-                }
-
-                return;
-            },
-            _ => {},
-        }
-
-        println!("CURSOR CTRL {} len:{}, offs:{} disp:{}",
-                 self.cursor_idx,
-                 self.len(),
-                 self.scroll_offset,
-                 self.render_feedback.recent_line_count);
-
-        if self.cursor_idx >= self.len() {
-            self.cursor_idx = if self.len() > 0 { self.len() - 1 } else { 0 };
-        }
-
-        let recent_linecnt = self.render_feedback.recent_line_count;
-
-        if recent_linecnt <= 2 * SCROLL_PADDING {
-            if self.cursor_idx > 0 {
-                self.scroll_offset = self.cursor_idx - 1;
-            } else {
-                self.scroll_offset = self.cursor_idx;
-            }
-        } else {
-            if self.cursor_idx < (self.scroll_offset + SCROLL_PADDING) {
-                let diff = (self.scroll_offset + SCROLL_PADDING) - self.cursor_idx;
-                if self.scroll_offset > diff {
-                    self.scroll_offset -= diff;
-                } else {
-                    self.scroll_offset = 0;
-                }
-
-            } else if (self.cursor_idx + SCROLL_PADDING + 1) > (self.scroll_offset + recent_linecnt) {
-                self.scroll_offset += (self.cursor_idx + SCROLL_PADDING + 1) - (self.scroll_offset + recent_linecnt);
-            }
-
-            if (self.scroll_offset + recent_linecnt) > self.len() {
-                if self.len() < recent_linecnt {
-                    self.scroll_offset = 0;
-                } else {
-                    self.scroll_offset = self.len() - recent_linecnt;
-                }
-            }
-        }
-
-        println!("END CURSOR CTRL {} len:{}, offs:{} disp:{}", self.cursor_idx, self.len(), self.scroll_offset, recent_linecnt);
+        self.cursor.do_control(&self.render_feedback, ctrl);
     }
 
     fn as_draw_page(&self) -> Table {
