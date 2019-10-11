@@ -55,9 +55,23 @@ pub struct RenderFeedback {
     pub end_rows:          (i32, i32),
     pub screen_pos:        (i32, i32),
     pub screen_rect:       (u32, u32),
+    pub width_in_m_chars:  usize,
 }
 
 impl RenderFeedback {
+    pub fn new() -> Self {
+        RenderFeedback {
+            screen_pos:        (0, 0),
+            screen_rect:       (0, 0),
+            recent_line_count: 0,
+            row_offset:        0,
+            start_rows:        (0, 0),
+            row_height:        0,
+            end_rows:          (0, 0),
+            width_in_m_chars:  0,
+        }
+    }
+
     pub fn is_inside_screen_rect(&self, x: i32, y: i32) -> bool {
         let x1 = self.screen_pos.0;
         let y1 = self.screen_pos.1;

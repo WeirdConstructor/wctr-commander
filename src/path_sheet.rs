@@ -40,8 +40,6 @@ pub struct PathSheet {
     pub cursor:             PageCursor,
 }
 
-const SCROLL_PADDING : usize = 5;
-
 impl PathSheet {
     pub fn read(path: &std::path::Path) -> Result<PathSheet, FMError> {
         let mut sheet_paths = Vec::new();
@@ -71,15 +69,7 @@ impl PathSheet {
         Ok(PathSheet {
             base:           path.to_path_buf(),
             paths:          sheet_paths,
-            render_feedback: RenderFeedback {
-                screen_pos:        (0, 0),
-                screen_rect:       (0, 0),
-                recent_line_count: 0,
-                row_offset:        0,
-                start_rows:        (0, 0),
-                row_height:        0,
-                end_rows:          (0, 0),
-            },
+            render_feedback: RenderFeedback::new(),
             cursor:         PageCursor::new(),
             selection:      std::collections::HashSet::new(),
             highlight:      std::collections::HashSet::new(),
@@ -142,7 +132,7 @@ impl FmPage for PathSheet {
     }
 
     fn do_control(&mut self, ctrl: PageControl) {
-        self.cursor.do_control(&self.render_feedback, ctrl);
+        self.cursor.do_control(self.len(), &self.render_feedback, ctrl);
     }
 
     fn as_draw_page(&self) -> Table {

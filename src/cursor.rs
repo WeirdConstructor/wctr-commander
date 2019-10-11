@@ -1,4 +1,7 @@
 use crate::fm_page::RenderFeedback;
+use crate::fm_page::PageControl;
+
+const SCROLL_PADDING : usize = 5;
 
 pub struct PageCursor {
     pub cursor_idx:         usize,
@@ -13,7 +16,10 @@ impl PageCursor {
         }
     }
 
-    pub fn do_control(&mut self, render_fb: &RenderFeedback, ctrl: PageControl) {
+    pub fn do_control(&mut self,
+                      row_count: usize,
+                      render_fb: &RenderFeedback,
+                      ctrl: PageControl) {
         match ctrl {
             PageControl::CursorDown => {
                 self.cursor_idx += 1;
@@ -50,11 +56,11 @@ impl PageCursor {
                     self.scroll_offset += amount as usize;
                 }
 
-                if self.len() <= render_fb.recent_line_count {
+                if row_count <= render_fb.recent_line_count {
                     self.scroll_offset = 0;
                 } else {
-                    if self.scroll_offset > (self.len() - render_fb.recent_line_count) {
-                        self.scroll_offset = self.len() - render_fb.recent_line_count;
+                    if self.scroll_offset > (row_count - render_fb.recent_line_count) {
+                        self.scroll_offset = row_count - render_fb.recent_line_count;
                     }
                 }
 
@@ -63,14 +69,14 @@ impl PageCursor {
             _ => {},
         }
 
-        println!("CURSOR CTRL {} len:{}, offs:{} disp:{}",
+        println!("CURSOR CTRL {} row_count:{}, offs:{} disp:{}",
                  self.cursor_idx,
-                 self.len(),
+                 row_count,
                  self.scroll_offset,
                  render_fb.recent_line_count);
 
-        if self.cursor_idx >= self.len() {
-            self.cursor_idx = if self.len() > 0 { self.len() - 1 } else { 0 };
+        if self.cursor_idx >= row_count {
+            self.cursor_idx = if row_count > 0 { row_count - 1 } else { 0 };
         }
 
         let recent_linecnt = render_fb.recent_line_count;
@@ -94,16 +100,16 @@ impl PageCursor {
                 self.scroll_offset += (self.cursor_idx + SCROLL_PADDING + 1) - (self.scroll_offset + recent_linecnt);
             }
 
-            if (self.scroll_offset + recent_linecnt) > self.len() {
-                if self.len() < recent_linecnt {
+            if (self.scroll_offset + recent_linecnt) > row_count {
+                if row_count < recent_linecnt {
                     self.scroll_offset = 0;
                 } else {
-                    self.scroll_offset = self.len() - recent_linecnt;
+                    self.scroll_offset = row_count - recent_linecnt;
                 }
             }
         }
 
-        println!("END CURSOR CTRL {} len:{}, offs:{} disp:{}", self.cursor_idx, self.len(), self.scroll_offset, recent_linecnt);
+        println!("END CURSOR CTRL {} row_count:{}, offs:{} disp:{}", self.cursor_idx, row_count, self.scroll_offset, recent_linecnt);
     }
 
     pub fn is_cursor_idx(&self, idx: usize) -> bool { self.cursor_idx == idx }

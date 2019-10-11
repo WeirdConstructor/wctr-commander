@@ -189,6 +189,15 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
         }
     }
 
+    fn calc_table_width_chars(&self, table_width: i32) {
+        let tsize = self.font.borrow().size_of("m");
+        let mut char_width_in_px : usize = tsize.unwrap_or((0, 0)).0 as usize;
+        if char_width_in_px == 0 {
+            char_width_in_px = 5;
+        }
+        table_width as usize / char_width_in_px
+    }
+
     fn calc_column_width(&mut self, table: &Table, table_width: i32, skip_cols: u32) -> std::vec::Vec<i32> {
         if skip_cols >= table.columns.len() as u32 {
             return Vec::new();
@@ -292,6 +301,7 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
 
         self.calc_column_text_widths(table);
         let cols = self.calc_column_width(table, table_width, 0);
+        let width_in_m_chars = self.calc_table_width_chars(table_width);
 
         let row_height = self.font.borrow().height() + table.row_gap as i32;
 
@@ -354,6 +364,7 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
             row_height,
             end_rows:   (x_offs + table_width,
                          y_offs + row_height + row_count as i32 * row_height),
+            width_in_m_chars,
         }
     }
 }
