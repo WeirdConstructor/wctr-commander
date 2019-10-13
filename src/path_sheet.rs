@@ -1,6 +1,7 @@
 use chrono::DateTime;
 use chrono::offset::Utc;
 use crate::fm_page::*;
+use crate::cursor::PageCursor;
 use std::fs;
 
 #[derive(Debug)]
@@ -33,14 +34,12 @@ pub struct PathSheet {
     pub paths:              std::vec::Vec<PathRecord>,
     pub paths_dirty:        bool,
     pub state_dirty:        bool,
-    pub cursor_idx:         usize,
-    pub scroll_offset:      usize,
     pub selection:          std::collections::HashSet<usize>,
     pub highlight:          std::collections::HashSet<usize>,
     pub render_feedback:    RenderFeedback,
+    pub cursor:             PageCursor,
+    pub rendered:           TableRef,
 }
-
-const SCROLL_PADDING : usize = 5;
 
 impl PathSheet {
     pub fn read(path: &std::path::Path) -> Result<PathSheet, FMError> {
@@ -71,29 +70,21 @@ impl PathSheet {
         Ok(PathSheet {
             base:           path.to_path_buf(),
             paths:          sheet_paths,
-            cursor_idx:     0,
-            scroll_offset:  0,
-            render_feedback: RenderFeedback {
-                screen_pos:        (0, 0),
-                screen_rect:       (0, 0),
-                recent_line_count: 0,
-                row_offset:        0,
-                start_rows:        (0, 0),
-                row_height:        0,
-                end_rows:          (0, 0),
-            },
+            render_feedback: RenderFeedback::new(),
+            cursor:         PageCursor::new(),
             selection:      std::collections::HashSet::new(),
             highlight:      std::collections::HashSet::new(),
             paths_dirty:    false,
             state_dirty:    false,
+            rendered:       Table::new_ref(),
         })
     }
 }
 
 impl FmPage for PathSheet {
     fn len(&self) -> usize { self.paths.len() }
-    fn get_scroll_offs(&self) -> usize { self.scroll_offset }
-    fn is_cursor_idx(&self, idx: usize) -> bool { self.cursor_idx == idx }
+    fn get_scroll_offs(&self) -> usize { self.cursor.scroll_offset }
+    fn is_cursor_idx(&self, idx: usize) -> bool { self.cursor.is_cursor_idx(idx) }
     fn is_selected(&self, idx: usize) -> bool { self.selection.get(&idx).is_some() }
     fn is_highlighted(&self, idx: usize) -> bool { self.highlight.get(&idx).is_some() }
     fn needs_repage(&self) -> bool { self.paths_dirty }
@@ -143,161 +134,77 @@ impl FmPage for PathSheet {
     }
 
     fn do_control(&mut self, ctrl: PageControl) {
-        match ctrl {
-            PageControl::CursorDown => {
-                self.cursor_idx += 1;
-            },
-            PageControl::CursorUp => {
-                if self.cursor_idx > 0 {
-                    self.cursor_idx -= 1;
-                }
-            },
-            PageControl::Click((x, y)) => {
-                let x1 = self.render_feedback.start_rows.0;
-                let x2 = self.render_feedback.end_rows.0;
-                let y1 = self.render_feedback.start_rows.1;
-                let y2 = self.render_feedback.end_rows.1;
-
-                if !(x >= x1 && x <= x2 && y >= y1 && y <= y2) {
-                    return;
-                }
-
-                let y = y - y1;
-                let row = y / self.render_feedback.row_height;
-                self.cursor_idx = self.render_feedback.row_offset + row as usize;
-            },
-            PageControl::Scroll(amount) => {
-                println!("SCROLL {}", amount);
-                let amount = amount * SCROLL_PADDING as i32;
-                if amount < 0 && self.scroll_offset < (-amount) as usize {
-                    self.scroll_offset = 0;
-
-                } else if amount < 0 {
-                    self.scroll_offset -= (-amount) as usize;
-
-                } else {
-                    self.scroll_offset += amount as usize;
-                }
-
-                if self.len() <= self.render_feedback.recent_line_count {
-                    self.scroll_offset = 0;
-                } else {
-                    if self.scroll_offset > (self.len() - self.render_feedback.recent_line_count) {
-                        self.scroll_offset = self.len() - self.render_feedback.recent_line_count;
-                    }
-                }
-
-                return;
-            },
-            _ => {},
-        }
-
-        println!("CURSOR CTRL {} len:{}, offs:{} disp:{}",
-                 self.cursor_idx,
-                 self.len(),
-                 self.scroll_offset,
-                 self.render_feedback.recent_line_count);
-
-        if self.cursor_idx >= self.len() {
-            self.cursor_idx = if self.len() > 0 { self.len() - 1 } else { 0 };
-        }
-
-        let recent_linecnt = self.render_feedback.recent_line_count;
-
-        if recent_linecnt <= 2 * SCROLL_PADDING {
-            if self.cursor_idx > 0 {
-                self.scroll_offset = self.cursor_idx - 1;
-            } else {
-                self.scroll_offset = self.cursor_idx;
-            }
-        } else {
-            if self.cursor_idx < (self.scroll_offset + SCROLL_PADDING) {
-                let diff = (self.scroll_offset + SCROLL_PADDING) - self.cursor_idx;
-                if self.scroll_offset > diff {
-                    self.scroll_offset -= diff;
-                } else {
-                    self.scroll_offset = 0;
-                }
-
-            } else if (self.cursor_idx + SCROLL_PADDING + 1) > (self.scroll_offset + recent_linecnt) {
-                self.scroll_offset += (self.cursor_idx + SCROLL_PADDING + 1) - (self.scroll_offset + recent_linecnt);
-            }
-
-            if (self.scroll_offset + recent_linecnt) > self.len() {
-                if self.len() < recent_linecnt {
-                    self.scroll_offset = 0;
-                } else {
-                    self.scroll_offset = self.len() - recent_linecnt;
-                }
-            }
-        }
-
-        println!("END CURSOR CTRL {} len:{}, offs:{} disp:{}", self.cursor_idx, self.len(), self.scroll_offset, recent_linecnt);
+        self.cursor.do_control(self.len(), &self.render_feedback, ctrl);
     }
 
-    fn as_draw_page(&self) -> Table {
-        Table {
-            title: String::from(self.base.to_string_lossy()),
-            row_gap: 2,
-            col_gap: 4,
-            columns: vec![
-                Column {
-                    head: String::from("name"),
-                    size: ColumnSizing::ExpandFract(1),
-                    calc_size: None,
-                    rows: self.paths.iter().map(|p| {
-                        let mut path_postfix = String::from("");
-                        if let PathRecordType::Dir = p.path_type {
-                            path_postfix = std::path::MAIN_SEPARATOR.to_string();
-                        };
-
-                        StyleString {
-                            text: String::from(p.path.file_name()
-                                                .unwrap_or(std::ffi::OsStr::new(""))
-                                                .to_string_lossy()) + &path_postfix,
-                            style: match p.path_type {
-                                PathRecordType::File    => Style::File,
-                                PathRecordType::Dir     => Style::Dir,
-                                PathRecordType::SymLink => Style::Special,
-                            }
-                        }
-                    }).collect(),
-                },
-                Column {
-                    head: String::from("time"),
-                    size: ColumnSizing::TextWidth(String::from("MMMM-MM-MM MM:MM:MM")),
-                    calc_size: None,
-                    rows: self.paths.iter().map(|p| {
-                        let dt : DateTime<Utc> = p.mtime.into();
-                        StyleString { text: format!("{}", dt.format("%Y-%m-%d %H:%M:%S")), style: Style::Default }
-                    }).collect(),
-                },
-                Column {
-                    head: String::from("size"),
-                    size: ColumnSizing::TextWidth(String::from("MMMMMMMM")),
-                    calc_size: None,
-                    rows: self.paths.iter().map(|p| {
-                        let text =
-                            if p.size >= 1024_u64.pow(4) {
-                                let rnd = 1024_u64.pow(4) - 1;
-                                format!("{:-4}  TB", (p.size + rnd) / 1024_u64.pow(4))
-                            } else if p.size >= 1024_u64.pow(3) {
-                                let rnd = 1024_u64.pow(3) - 1;
-                                format!("{:-4}  GB", (p.size + rnd) / 1024_u64.pow(3))
-                            } else if p.size >= 1024_u64.pow(2) {
-                                let rnd = 1024_u64.pow(2) - 1;
-                                format!("{:-4}  MB", (p.size + rnd) / 1024_u64.pow(2))
-                            } else if p.size >= 1024_u64.pow(1) {
-                                let rnd = 1024_u64.pow(1) - 1;
-                                format!("{:-4}  kB", (p.size + rnd) / 1024_u64.pow(1))
-                            } else {
-                                format!("{:-4}  B", p.size)
-                            };
-                        StyleString { text, style: Style::Default }
-                    }).collect(),
-                },
-            ],
+    fn as_drawable_table(&mut self) -> TableRef {
+        if !self.needs_repage() {
+            return self.rendered.clone();
         }
+        self.rendered =
+            std::rc::Rc::new(std::cell::RefCell::new(Table {
+                title: String::from(self.base.to_string_lossy()),
+                row_gap: 2,
+                col_gap: 4,
+                columns: vec![
+                    Column {
+                        head: String::from("name"),
+                        size: ColumnSizing::ExpandFract(1),
+                        calc_size: None,
+                        rows: self.paths.iter().map(|p| {
+                            let mut path_postfix = String::from("");
+                            if let PathRecordType::Dir = p.path_type {
+                                path_postfix = std::path::MAIN_SEPARATOR.to_string();
+                            };
+
+                            StyleString {
+                                text: String::from(p.path.file_name()
+                                                    .unwrap_or(std::ffi::OsStr::new(""))
+                                                    .to_string_lossy()) + &path_postfix,
+                                style: match p.path_type {
+                                    PathRecordType::File    => Style::File,
+                                    PathRecordType::Dir     => Style::Dir,
+                                    PathRecordType::SymLink => Style::Special,
+                                }
+                            }
+                        }).collect(),
+                    },
+                    Column {
+                        head: String::from("time"),
+                        size: ColumnSizing::TextWidth(String::from("MMMM-MM-MM MM:MM:MM")),
+                        calc_size: None,
+                        rows: self.paths.iter().map(|p| {
+                            let dt : DateTime<Utc> = p.mtime.into();
+                            StyleString { text: format!("{}", dt.format("%Y-%m-%d %H:%M:%S")), style: Style::Default }
+                        }).collect(),
+                    },
+                    Column {
+                        head: String::from("size"),
+                        size: ColumnSizing::TextWidth(String::from("MMMMMMMM")),
+                        calc_size: None,
+                        rows: self.paths.iter().map(|p| {
+                            let text =
+                                if p.size >= 1024_u64.pow(4) {
+                                    let rnd = 1024_u64.pow(4) - 1;
+                                    format!("{:-4}  TB", (p.size + rnd) / 1024_u64.pow(4))
+                                } else if p.size >= 1024_u64.pow(3) {
+                                    let rnd = 1024_u64.pow(3) - 1;
+                                    format!("{:-4}  GB", (p.size + rnd) / 1024_u64.pow(3))
+                                } else if p.size >= 1024_u64.pow(2) {
+                                    let rnd = 1024_u64.pow(2) - 1;
+                                    format!("{:-4}  MB", (p.size + rnd) / 1024_u64.pow(2))
+                                } else if p.size >= 1024_u64.pow(1) {
+                                    let rnd = 1024_u64.pow(1) - 1;
+                                    format!("{:-4}  kB", (p.size + rnd) / 1024_u64.pow(1))
+                                } else {
+                                    format!("{:-4}  B", p.size)
+                                };
+                            StyleString { text, style: Style::Default }
+                        }).collect(),
+                    },
+                ],
+            }));
+        return self.rendered.clone();
     }
 }
 
