@@ -17,6 +17,9 @@ use path_sheet::*;
 use fm_page::*;
 use defs::*;
 
+use wlambda;
+use wlambda::{VVal, GlobalEnv, EvalContext};
+
 struct Page {
     fm_page:    Rc<dyn FmPage>,
     cache:      Option<Table>,
@@ -55,8 +58,7 @@ pub enum FileManagerSide {
     Right,
 }
 
-pub struct FileManager<'a, 'b> {
-    gui_painter:    GUIPainter<'a, 'b>,
+pub struct FileManager {
     left:           std::vec::Vec<Page>,
     right:          std::vec::Vec<Page>,
     active_side:    FileManagerSide,
@@ -67,8 +69,33 @@ enum PanePos {
     RightTab,
 }
 
+//fn wlambda_bind(genv: &mut GlobalEnv, fm: Rc<RefCell<FileManager>>) {
+//}
 
-impl<'a, 'b> FileManager<'a, 'b> {
+fn init_wlambda(fm: Rc<RefCell<std::any::Any>>) -> EvalContext {
+    let genv = GlobalEnv::new_default();
+
+//    wlambda_bind(&mut genv.borrow_mut(), fm.clone());
+
+    let lfmr =
+        std::rc::Rc::new(std::cell::RefCell::new(
+            wlambda::compiler::LocalFileModuleResolver::new()));
+    genv.borrow_mut().set_resolver(lfmr);
+    let mut wl_eval_ctx = EvalContext::new_with_user(genv, fm);
+
+    match wl_eval_ctx.eval_file("main.wl") {
+        Ok(v) => {
+            if v.is_err() {
+                panic!(format!("'main.wl' SCRIPT ERROR: {}", v.s()));
+            }
+        },
+        Err(e) => { panic!(format!("'main.wl' SCRIPT ERROR: {}", e)); }
+    }
+
+    wl_eval_ctx
+}
+
+impl FileManager {
     fn open_path_in(&mut self, path: &std::path::Path, pos: PanePos) {
         let ps = PathSheet::read(path).expect("No broken paths please");
         let r = Rc::new(ps);
@@ -134,26 +161,26 @@ impl<'a, 'b> FileManager<'a, 'b> {
         }
     }
 
-    fn redraw(&mut self) {
-        let win_size = self.gui_painter.canvas.window().size();
+    fn redraw(&mut self, gui_painter: &mut GUIPainter) {
+        let win_size = gui_painter.canvas.window().size();
         let half_width = win_size.0 / 2;
 
         if !self.left.is_empty() {
             let pg : &mut Page = self.left.get_mut(0).unwrap();
-            pg.draw(&mut self.gui_painter,
+            pg.draw(gui_painter,
                 0, 0, half_width, win_size.1,
                 self.active_side == FileManagerSide::Left);
         }
 
-        self.gui_painter.canvas.set_draw_color(DIVIDER_COLOR);
-        self.gui_painter.canvas.draw_line(
+        gui_painter.canvas.set_draw_color(DIVIDER_COLOR);
+        gui_painter.canvas.draw_line(
             Point::new(half_width as i32, 0),
             Point::new(half_width as i32, win_size.1 as i32))
             .expect("drawing a line");
 
         if !self.right.is_empty() {
             let pg : &mut Page = self.right.get_mut(0).unwrap();
-            pg.draw(&mut self.gui_painter,
+            pg.draw(gui_painter,
                 half_width as i32, 0, half_width, win_size.1,
                 self.active_side == FileManagerSide::Right);
         }
@@ -408,7 +435,6 @@ pub fn main() -> Result<(), String> {
 
     let mut event_pump = sdl_context.event_pump()?;
 
-
     let ttf_ctx = sdl2::ttf::init().map_err(|e| e.to_string())?;
 
     let mut font = ttf_ctx.load_font("DejaVuSansMono.ttf", 14).map_err(|e| e.to_string())?;
@@ -417,102 +443,111 @@ pub fn main() -> Result<(), String> {
 //    font.set_outline_width(0.1);
     font.set_kerning(true);
 
-    let mut fm = FileManager {
-        gui_painter: GUIPainter {
-            canvas: canvas,
-            font: Rc::new(RefCell::new(font)),
-        },
+    let mut gui_painter = GUIPainter {
+        canvas: canvas,
+        font: Rc::new(RefCell::new(font)),
+    };
+
+    let fm = FileManager {
         active_side: FileManagerSide::Left,
         left: Vec::new(),
         right: Vec::new(),
     };
 
-    let pth = std::path::Path::new(".");
-    fm.open_path_in(pth, PanePos::LeftTab);
-    let pth = std::path::Path::new("..");
-    fm.open_path_in(pth, PanePos::RightTab);
+    let fm = Rc::new(RefCell::new(fm));
 
-    let mut last_frame = Instant::now();
-    let mut is_first = true;
-    'running: loop {
-        let mut force_redraw = false;
-        let event = event_pump.wait_event_timeout(1000);
-        let mouse_state = event_pump.mouse_state();
-        if let Some(event) = event {
-            match event {
-                Event::Quit {..} | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                    break 'running
-                },
-                Event::KeyDown { keycode: Some(Keycode::Tab), .. } => {
-                    fm.toggle_active_side();
-                },
-                Event::KeyDown { keycode: Some(Keycode::H), .. } => {
-                    fm.process_page_control(PageControl::Back, None);
-                },
-                Event::KeyDown { keycode: Some(Keycode::J), .. } => {
-                    fm.process_page_control(PageControl::CursorDown, None);
-                },
-                Event::KeyDown { keycode: Some(Keycode::K), .. } => {
-                    fm.process_page_control(PageControl::CursorUp, None);
-                },
-                Event::KeyDown { keycode: Some(Keycode::L), .. } => {
-                    fm.process_page_control(PageControl::Access, None);
-                },
-                Event::MouseButtonDown { x, y, .. } => {
-                    fm.process_page_control(PageControl::Click((x, y)), Some((x, y)));
-                },
-                Event::TextInput { text, .. } => {
-                    println!("TEXT: {}", text);
-                },
-                Event::MouseWheel { y, direction: dir, .. } => {
-                    match dir {
-                        sdl2::mouse::MouseWheelDirection::Normal => {
-                            fm.process_page_control(PageControl::Scroll(-y), Some((mouse_state.x(), mouse_state.y())));
-                            println!("DIR NORMAL");
-                        },
-                        sdl2::mouse::MouseWheelDirection::Flipped => {
-                            fm.process_page_control(PageControl::Scroll(y), Some((mouse_state.x(), mouse_state.y())));
-                            println!("DIR FLOP");
-                        },
-                        _ => {}
-                    }
-                },
-                Event::Window { win_event: w, timestamp: _, window_id: _ } => {
-                    match w {
-                        WindowEvent::Resized(w, h) => {
-                            println!("XHX {},{}", w, h);
-                            fm.handle_resize();
-                            force_redraw = true;
-                        },
-                        WindowEvent::SizeChanged(w, h) => {
-                            println!("XHXSC {},{}", w, h);
-                            fm.handle_resize();
-                            force_redraw = true;
-                        },
-                        WindowEvent::FocusGained => {
-                            force_redraw = true;
-                        },
-                        WindowEvent::FocusLost => {
-                            force_redraw = true;
-                        },
-                        _ => {}
-                    }
-                },
-                _ => {}
+    let fma : Rc<RefCell<std::any::Any>> = fm.clone();
+
+    let ectx = init_wlambda(fma);
+
+    {
+        let pth = std::path::Path::new(".");
+        fm.borrow_mut().open_path_in(pth, PanePos::LeftTab);
+        let pth = std::path::Path::new("..");
+        fm.borrow_mut().open_path_in(pth, PanePos::RightTab);
+
+        let mut last_frame = Instant::now();
+        let mut is_first = true;
+        'running: loop {
+            let mut force_redraw = false;
+            let event = event_pump.wait_event_timeout(1000);
+            let mouse_state = event_pump.mouse_state();
+            if let Some(event) = event {
+                match event {
+                    Event::Quit {..} | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
+                        break 'running
+                    },
+                    Event::KeyDown { keycode: Some(Keycode::Tab), .. } => {
+                        fm.borrow_mut().toggle_active_side();
+                    },
+                    Event::KeyDown { keycode: Some(Keycode::H), .. } => {
+                        fm.borrow_mut().process_page_control(PageControl::Back, None);
+                    },
+                    Event::KeyDown { keycode: Some(Keycode::J), .. } => {
+                        fm.borrow_mut().process_page_control(PageControl::CursorDown, None);
+                    },
+                    Event::KeyDown { keycode: Some(Keycode::K), .. } => {
+                        fm.borrow_mut().process_page_control(PageControl::CursorUp, None);
+                    },
+                    Event::KeyDown { keycode: Some(Keycode::L), .. } => {
+                        fm.borrow_mut().process_page_control(PageControl::Access, None);
+                    },
+                    Event::MouseButtonDown { x, y, .. } => {
+                        fm.borrow_mut().process_page_control(PageControl::Click((x, y)), Some((x, y)));
+                    },
+                    Event::TextInput { text, .. } => {
+                        println!("TEXT: {}", text);
+                    },
+                    Event::MouseWheel { y, direction: dir, .. } => {
+                        match dir {
+                            sdl2::mouse::MouseWheelDirection::Normal => {
+                                fm.borrow_mut().process_page_control(PageControl::Scroll(-y), Some((mouse_state.x(), mouse_state.y())));
+                                println!("DIR NORMAL");
+                            },
+                            sdl2::mouse::MouseWheelDirection::Flipped => {
+                                fm.borrow_mut().process_page_control(PageControl::Scroll(y), Some((mouse_state.x(), mouse_state.y())));
+                                println!("DIR FLOP");
+                            },
+                            _ => {}
+                        }
+                    },
+                    Event::Window { win_event: w, timestamp: _, window_id: _ } => {
+                        match w {
+                            WindowEvent::Resized(w, h) => {
+                                println!("XHX {},{}", w, h);
+                                fm.borrow_mut().handle_resize();
+                                force_redraw = true;
+                            },
+                            WindowEvent::SizeChanged(w, h) => {
+                                println!("XHXSC {},{}", w, h);
+                                fm.borrow_mut().handle_resize();
+                                force_redraw = true;
+                            },
+                            WindowEvent::FocusGained => {
+                                force_redraw = true;
+                            },
+                            WindowEvent::FocusLost => {
+                                force_redraw = true;
+                            },
+                            _ => {}
+                        }
+                    },
+                    _ => {}
+                }
             }
+
+            let frame_time = last_frame.elapsed().as_millis();
+            println!("FO {},{},{}", frame_time, is_first, force_redraw);
+
+            if is_first || force_redraw || frame_time >= 16 {
+                gui_painter.clear();
+                fm.borrow_mut().redraw(&mut gui_painter);
+                gui_painter.done();
+                last_frame = Instant::now();
+            }
+
+            is_first = false;
         }
-
-        let frame_time = last_frame.elapsed().as_millis();
-        println!("FO {},{},{}", frame_time, is_first, force_redraw);
-
-        if is_first || force_redraw || frame_time >= 16 {
-            fm.gui_painter.clear();
-            fm.redraw();
-            fm.gui_painter.done();
-            last_frame = Instant::now();
-        }
-
-        is_first = false;
     }
 
     Ok(())

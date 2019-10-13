@@ -1,0 +1,1 @@
+std:displayln "STARTUP";

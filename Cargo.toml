@@ -6,6 +6,7 @@ edition = "2018"
 
 [dependencies]
 chrono = "0.4.6"
+wlambda = { path = "../wlambda" }
 
 [dependencies.sdl2]
 version="0.32"
