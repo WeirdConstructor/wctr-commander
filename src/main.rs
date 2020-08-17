@@ -409,21 +409,35 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
     }
 }
 
-fn draw_text(font: &mut sdl2::ttf::Font, color: Color, canvas: &mut sdl2::render::Canvas<sdl2::video::Window>, x: i32, y: i32, max_w: i32, txt: &str) {
+fn with_text2texture<F, R>(font: &mut sdl2::ttf::Font,
+                canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
+                color: Color, txt: &str, f: F) -> R
+    where F: Fn(&mut sdl2::render::Canvas<sdl2::video::Window>, &sdl2::render::Texture) -> R {
+
     let txt_crt = canvas.texture_creator();
+    let sf      = font.render(txt).blended(color).map_err(|e| e.to_string()).unwrap();
+    let txt     = txt_crt.create_texture_from_surface(&sf).map_err(|e| e.to_string()).unwrap();
 
-    let sf = font.render(txt).blended(color).map_err(|e| e.to_string()).unwrap();
-    let txt = txt_crt.create_texture_from_surface(&sf).map_err(|e| e.to_string()).unwrap();
-    let tq = txt.query();
+    f(canvas, &txt)
+}
 
-    let w : i32 = if max_w < (tq.width as i32) { max_w } else { tq.width as i32 };
+fn draw_text(font: &mut sdl2::ttf::Font, color: Color,
+             canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
+             x: i32, y: i32,
+             max_w: i32, txt: &str) {
 
-//    txt.set_color_mod(255, 0, 0);
-    canvas.copy(
-        &txt,
-        Some(Rect::new(0, 0, w as u32, tq.height)),
-        Some(Rect::new(x, y, w as u32, tq.height))
-    ).map_err(|e| e.to_string()).unwrap();
+    with_text2texture(font, canvas, color, txt, |canvas, t| {
+        let tq = t.query();
+        let w : i32 = if max_w < (tq.width as i32) { max_w } else { tq.width as i32 };
+
+    //    t.set_color_mod(255, 0, 0);
+        canvas.copy(
+            &t,
+            Some(Rect::new(0, 0, w as u32, tq.height)),
+            Some(Rect::new(x, y, w as u32, tq.height))
+        ).map_err(|e| e.to_string()).unwrap();
+    });
+
 }
 
 fn draw_bg_text(canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
@@ -435,6 +449,24 @@ fn draw_bg_text(canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
                 max_w: i32,
                 h: i32,
                 txt: &str) {
+
+    canvas.set_draw_color(bg_color);
+    canvas.fill_rect(Rect::new(x, y, max_w as u32, h as u32))
+        .expect("filling rectangle");
+    draw_text(font, color, canvas, x, y, max_w, txt);
+}
+
+fn draw_bg_text_cursor(
+    canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
+    font: &mut sdl2::ttf::Font,
+    color: Color,
+    bg_color: Color,
+    x: i32,
+    y: i32,
+    max_w: i32,
+    h: i32,
+    txt: &str,
+    cursor_idx: i32) {
 
     canvas.set_draw_color(bg_color);
     canvas.fill_rect(Rect::new(x, y, max_w as u32, h as u32))
