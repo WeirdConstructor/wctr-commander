@@ -19,7 +19,7 @@ enum TextInputAction {
 }
 
 impl TextInputLine {
-    fn new() -> TextInputLine {
+    pub fn new() -> TextInputLine {
         TextInputLine {
             history:        Vec::new(),
             history_pos:    None,

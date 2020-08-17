@@ -19,6 +19,7 @@ use log_sheet::*;
 use path_sheet::*;
 use fm_page::*;
 use defs::*;
+use text_line::*;
 
 use wlambda;
 use wlambda::{VVal, GlobalEnv, EvalContext};
@@ -56,6 +57,7 @@ pub struct FileManager {
     right:          std::vec::Vec<PathSheet>,
     log:            LogSheet,
     active_side:    FileManagerSide,
+    input_line:     TextInputLine,
 }
 
 enum PanePos {
@@ -158,8 +160,9 @@ impl FileManager {
         let win_size = gui_painter.canvas.window().size();
         let half_width = win_size.0 / 2;
 
+        let input_height = 14;
         let log_height = win_size.1 / 4;
-        let tab_height = win_size.1 - log_height;
+        let tab_height = win_size.1 - log_height - input_height;
         let log_offs_y = tab_height as i32;
 
         if !self.left.is_empty() {
@@ -186,6 +189,14 @@ impl FileManager {
         draw_fm_page(fm_page, gui_painter,
             0, log_offs_y, win_size.0, log_height,
             true);
+
+        draw_bg_text(
+            &mut gui_painter.canvas,
+            &mut gui_painter.font.borrow_mut(),
+            NORM_FG_COLOR,
+            NORM_BG_COLOR,
+            0, log_offs_y + (log_height as i32),
+            win_size.0 as i32, 14, "test123");
     }
 }
 
@@ -461,9 +472,10 @@ pub fn main() -> Result<(), String> {
 
     let fm = FileManager {
         active_side: FileManagerSide::Left,
-        left: Vec::new(),
-        right: Vec::new(),
-        log: LogSheet::new(),
+        left:        Vec::new(),
+        right:       Vec::new(),
+        log:         LogSheet::new(),
+        input_line:  TextInputLine::new(),
     };
 
     let fm = Rc::new(RefCell::new(fm));
