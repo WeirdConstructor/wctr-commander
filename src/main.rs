@@ -190,13 +190,14 @@ impl FileManager {
             0, log_offs_y, win_size.0, log_height,
             true);
 
-        draw_bg_text(
+        draw_bg_text_cursor(
             &mut gui_painter.canvas,
             &mut gui_painter.font.borrow_mut(),
             NORM_FG_COLOR,
             NORM_BG_COLOR,
             0, log_offs_y + (log_height as i32),
-            win_size.0 as i32, 14, "test123");
+            win_size.0 as i32, 14, "test123",
+            2);
     }
 }
 
@@ -411,8 +412,8 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
 
 fn with_text2texture<F, R>(font: &mut sdl2::ttf::Font,
                 canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
-                color: Color, txt: &str, f: F) -> R
-    where F: Fn(&mut sdl2::render::Canvas<sdl2::video::Window>, &sdl2::render::Texture) -> R {
+                color: Color, txt: &str, mut f: F) -> R
+    where F: FnMut(&mut sdl2::render::Canvas<sdl2::video::Window>, &sdl2::render::Texture) -> R {
 
     let txt_crt = canvas.texture_creator();
     let sf      = font.render(txt).blended(color).map_err(|e| e.to_string()).unwrap();
@@ -437,7 +438,6 @@ fn draw_text(font: &mut sdl2::ttf::Font, color: Color,
             Some(Rect::new(x, y, w as u32, tq.height))
         ).map_err(|e| e.to_string()).unwrap();
     });
-
 }
 
 fn draw_bg_text(canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
@@ -461,17 +461,66 @@ fn draw_bg_text_cursor(
     font: &mut sdl2::ttf::Font,
     color: Color,
     bg_color: Color,
-    x: i32,
+    mut x: i32,
     y: i32,
     max_w: i32,
     h: i32,
     txt: &str,
-    cursor_idx: i32) {
+    cursor_idx: usize) {
+
+    let begin  : String = txt.chars().take(cursor_idx).collect();
+    let cursor : String = txt.chars().skip(cursor_idx).take(1).collect();
+    let end    : String = txt.chars().skip(cursor_idx + 1).collect();
+
+    let mut xs = x;
 
     canvas.set_draw_color(bg_color);
     canvas.fill_rect(Rect::new(x, y, max_w as u32, h as u32))
         .expect("filling rectangle");
-    draw_text(font, color, canvas, x, y, max_w, txt);
+
+
+    with_text2texture(font, canvas, color, &begin, |canvas, t| {
+        let tq = t.query();
+        let w : i32 = if max_w < (tq.width as i32) { max_w } else { tq.width as i32 };
+
+    //    t.set_color_mod(255, 0, 0);
+        canvas.copy(
+            &t,
+            Some(Rect::new(0, 0, w as u32, tq.height)),
+            Some(Rect::new(xs, y, w as u32, tq.height))
+        ).map_err(|e| e.to_string()).unwrap();
+
+        xs += w;
+    });
+
+    with_text2texture(font, canvas, CURS_FG_COLOR, &cursor, |canvas, t| {
+        let tq = t.query();
+        let w : i32 = if max_w < (tq.width as i32) { max_w } else { tq.width as i32 };
+
+        canvas.set_draw_color(CURS_BG_COLOR);
+        canvas.fill_rect(Rect::new(xs, y, w as u32, h as u32))
+            .expect("filling rectangle");
+    //    t.set_color_mod(255, 0, 0);
+        canvas.copy(
+            &t,
+            Some(Rect::new(0, 0, w as u32, tq.height)),
+            Some(Rect::new(xs, y, w as u32, tq.height))
+        ).map_err(|e| e.to_string()).unwrap();
+
+        xs += w;
+    });
+
+    with_text2texture(font, canvas, color, &end, |canvas, t| {
+        let tq = t.query();
+        let w : i32 = if max_w < (tq.width as i32) { max_w } else { tq.width as i32 };
+
+    //    t.set_color_mod(255, 0, 0);
+        canvas.copy(
+            &t,
+            Some(Rect::new(0, 0, w as u32, tq.height)),
+            Some(Rect::new(xs, y, w as u32, tq.height))
+        ).map_err(|e| e.to_string()).unwrap();
+    });
 }
 
 pub fn main() -> Result<(), String> {
