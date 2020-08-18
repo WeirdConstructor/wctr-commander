@@ -197,7 +197,7 @@ impl FileManager {
             NORM_BG_COLOR,
             0, log_offs_y + (log_height as i32),
             win_size.0 as i32, 14, "test123",
-            2);
+            7);
     }
 }
 
@@ -410,10 +410,14 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
     }
 }
 
-fn with_text2texture<F, R>(font: &mut sdl2::ttf::Font,
+fn with_text2texture<F>(font: &mut sdl2::ttf::Font,
                 canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
-                color: Color, txt: &str, mut f: F) -> R
-    where F: FnMut(&mut sdl2::render::Canvas<sdl2::video::Window>, &sdl2::render::Texture) -> R {
+                color: Color, txt: &str, mut f: F)
+    where F: FnMut(&mut sdl2::render::Canvas<sdl2::video::Window>, &sdl2::render::Texture) {
+
+    if txt.is_empty() {
+        return;
+    }
 
     let txt_crt = canvas.texture_creator();
     let sf      = font.render(txt).blended(color).map_err(|e| e.to_string()).unwrap();
@@ -477,7 +481,6 @@ fn draw_bg_text_cursor(
     canvas.set_draw_color(bg_color);
     canvas.fill_rect(Rect::new(x, y, max_w as u32, h as u32))
         .expect("filling rectangle");
-
 
     with_text2texture(font, canvas, color, &begin, |canvas, t| {
         let tq = t.query();
