@@ -28,6 +28,10 @@ impl TextInputLine {
         }
     }
 
+    pub fn get_line_info(&self) -> (usize, usize, &str) {
+        (self.cursor_pos, 0, &self.text)
+    }
+
     fn add_history(&mut self, text: String) {
         self.history_pos = None;
         if !self.history.is_empty()

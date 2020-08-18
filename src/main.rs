@@ -190,14 +190,14 @@ impl FileManager {
             0, log_offs_y, win_size.0, log_height,
             true);
 
+        let (cursor_pos, scroll_offs, line_txt) = self.input_line.get_line_info();
         draw_bg_text_cursor(
             &mut gui_painter.canvas,
             &mut gui_painter.font.borrow_mut(),
             NORM_FG_COLOR,
             NORM_BG_COLOR,
             0, log_offs_y + (log_height as i32),
-            win_size.0 as i32, 14, "test123",
-            2);
+            win_size.0 as i32, 14, line_txt, cursor_pos);
     }
 }
 
