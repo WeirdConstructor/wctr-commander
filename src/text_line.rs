@@ -1,4 +1,5 @@
 
+#[derive(Debug,Clone)]
 pub struct TextInputLine {
     history:        std::vec::Vec<String>,
     history_pos:    Option<u32>,
@@ -6,7 +7,8 @@ pub struct TextInputLine {
     text:           String,
 }
 
-enum TextInputAction {
+#[derive(Debug,Clone)]
+pub enum TextInputAction {
     Insert(String),
     Replace(String),
     Clear,
@@ -41,7 +43,7 @@ impl TextInputLine {
         self.history.push(text);
     }
 
-    fn handle_input(&mut self, action: TextInputAction) {
+    pub fn handle_input(&mut self, action: TextInputAction) {
         match action {
             TextInputAction::Insert(s) => {
                 let left : String = self.text.chars().take(self.cursor_pos).collect();

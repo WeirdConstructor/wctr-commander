@@ -52,12 +52,33 @@ pub enum FileManagerSide {
     Right,
 }
 
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum FileManagerMode {
+    Normal,
+    CommandLine,
+}
+
+impl FileManagerMode {
+    fn to_prompt(&self) -> &str {
+        match self {
+            FileManagerMode::Normal      => "[NORMAL]",
+            FileManagerMode::CommandLine => "> ",
+        }
+    }
+}
+
 pub struct FileManager {
     left:           std::vec::Vec<PathSheet>,
     right:          std::vec::Vec<PathSheet>,
     log:            LogSheet,
     active_side:    FileManagerSide,
     input_line:     TextInputLine,
+    // TODO: Replace mode with "prompt" and enable/disable input line.
+    mode:           FileManagerMode,
+}
+
+enum FileManagerAction {
+    SwitchMode(FileManagerMode),
 }
 
 enum PanePos {
@@ -107,6 +128,24 @@ impl FileManager {
                 FileManagerSide::Left => FileManagerSide::Right,
                 FileManagerSide::Right => FileManagerSide::Left,
             };
+    }
+
+    fn action(&mut self, fmact: FileManagerAction) {
+        match fmact {
+            FileManagerAction::SwitchMode(mode) => {
+                self.mode = mode;
+            },
+        }
+    }
+
+    fn enter_text(&mut self, txt: &str) {
+        // TODO: Implement the mode that redirects key presses into the input
+        //       handling! We need an extra layer for this!
+        //       Keys => WLambda map to actions => FileManager
+        if let FileManagerMode::CommandLine = self.mode {
+            self.input_line.handle_input(
+                TextInputAction::Insert(txt.to_string()));
+        }
     }
 
     fn process_page_control(&mut self, ctrl: PageControl, mouse: Option<(i32, i32)>) {
@@ -160,7 +199,7 @@ impl FileManager {
         let win_size = gui_painter.canvas.window().size();
         let half_width = win_size.0 / 2;
 
-        let input_height = 14;
+        let input_height = 20;
         let log_height = win_size.1 / 4;
         let tab_height = win_size.1 - log_height - input_height;
         let log_offs_y = tab_height as i32;
@@ -190,14 +229,48 @@ impl FileManager {
             0, log_offs_y, win_size.0, log_height,
             true);
 
-        let (cursor_pos, scroll_offs, line_txt) = self.input_line.get_line_info();
-        draw_bg_text_cursor(
-            &mut gui_painter.canvas,
-            &mut gui_painter.font.borrow_mut(),
-            NORM_FG_COLOR,
-            NORM_BG_COLOR,
-            0, log_offs_y + (log_height as i32),
-            win_size.0 as i32, 14, line_txt, cursor_pos);
+        let input_line_xoffs = match self.mode {
+            FileManagerMode::Normal => {
+                let (w, _h) =
+                    draw_bg_text(
+                        &mut gui_painter.canvas,
+                        &mut gui_painter.font.borrow_mut(),
+                        NORM_FG_COLOR,
+                        NORM_BG_COLOR,
+                        0, log_offs_y + (log_height as i32),
+                        win_size.0 as i32, 20, self.mode.to_prompt());
+                w
+            },
+            FileManagerMode::CommandLine => {
+                let (w, _h) =
+                    draw_bg_text(
+                        &mut gui_painter.canvas,
+                        &mut gui_painter.font.borrow_mut(),
+                        NORM_FG_COLOR,
+                        NORM_BG_COLOR,
+                        0, log_offs_y + (log_height as i32),
+                        win_size.0 as i32, 20, self.mode.to_prompt());
+                w
+            },
+        };
+
+        match self.mode {
+            FileManagerMode::Normal => {
+            },
+            FileManagerMode::CommandLine => {
+                let (cursor_pos, scroll_offs, line_txt) =
+                    self.input_line.get_line_info();
+                draw_bg_text_cursor(
+                    &mut gui_painter.canvas,
+                    &mut gui_painter.font.borrow_mut(),
+                    NORM_FG_COLOR,
+                    NORM_BG_COLOR,
+                    input_line_xoffs as i32,
+                    log_offs_y + (log_height as i32),
+                    win_size.0 as i32 - input_line_xoffs as i32,
+                    20, line_txt, cursor_pos);
+            }
+        }
     }
 }
 
@@ -410,14 +483,19 @@ impl<'a, 'b> GUIPainter<'a, 'b> {
     }
 }
 
-fn with_text2texture<F, R>(font: &mut sdl2::ttf::Font,
+fn with_text2texture<F>(font: &mut sdl2::ttf::Font,
                 canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
-                color: Color, txt: &str, mut f: F) -> R
-    where F: FnMut(&mut sdl2::render::Canvas<sdl2::video::Window>, &sdl2::render::Texture) -> R {
+                color: Color, txt: &str, mut f: F) -> (u32, u32)
+    where F: FnMut(&mut sdl2::render::Canvas<sdl2::video::Window>, &sdl2::render::Texture) -> (u32, u32) {
+
+    if txt.is_empty() {
+        return (0, 0);
+    }
 
     let txt_crt = canvas.texture_creator();
     let sf      = font.render(txt).blended(color).map_err(|e| e.to_string()).unwrap();
     let txt     = txt_crt.create_texture_from_surface(&sf).map_err(|e| e.to_string()).unwrap();
+    let tq      = txt.query();
 
     f(canvas, &txt)
 }
@@ -425,7 +503,7 @@ fn with_text2texture<F, R>(font: &mut sdl2::ttf::Font,
 fn draw_text(font: &mut sdl2::ttf::Font, color: Color,
              canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
              x: i32, y: i32,
-             max_w: i32, txt: &str) {
+             max_w: i32, txt: &str) -> (u32, u32) {
 
     with_text2texture(font, canvas, color, txt, |canvas, t| {
         let tq = t.query();
@@ -437,7 +515,9 @@ fn draw_text(font: &mut sdl2::ttf::Font, color: Color,
             Some(Rect::new(0, 0, w as u32, tq.height)),
             Some(Rect::new(x, y, w as u32, tq.height))
         ).map_err(|e| e.to_string()).unwrap();
-    });
+
+        (w as u32, tq.height)
+    })
 }
 
 fn draw_bg_text(canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
@@ -448,12 +528,12 @@ fn draw_bg_text(canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
                 y: i32,
                 max_w: i32,
                 h: i32,
-                txt: &str) {
+                txt: &str) -> (u32, u32) {
 
     canvas.set_draw_color(bg_color);
     canvas.fill_rect(Rect::new(x, y, max_w as u32, h as u32))
         .expect("filling rectangle");
-    draw_text(font, color, canvas, x, y, max_w, txt);
+    draw_text(font, color, canvas, x, y, max_w, txt)
 }
 
 fn draw_bg_text_cursor(
@@ -466,7 +546,7 @@ fn draw_bg_text_cursor(
     max_w: i32,
     h: i32,
     txt: &str,
-    cursor_idx: usize) {
+    cursor_idx: usize) -> (u32, u32) {
 
     let begin  : String = txt.chars().take(cursor_idx).collect();
     let cursor : String = txt.chars().skip(cursor_idx).take(1).collect();
@@ -478,8 +558,7 @@ fn draw_bg_text_cursor(
     canvas.fill_rect(Rect::new(x, y, max_w as u32, h as u32))
         .expect("filling rectangle");
 
-
-    with_text2texture(font, canvas, color, &begin, |canvas, t| {
+    let (w1, h1) = with_text2texture(font, canvas, color, &begin, |canvas, t| {
         let tq = t.query();
         let w : i32 = if max_w < (tq.width as i32) { max_w } else { tq.width as i32 };
 
@@ -491,9 +570,10 @@ fn draw_bg_text_cursor(
         ).map_err(|e| e.to_string()).unwrap();
 
         xs += w;
+        (w as u32, tq.height)
     });
 
-    with_text2texture(font, canvas, CURS_FG_COLOR, &cursor, |canvas, t| {
+    let (w2, h2) = with_text2texture(font, canvas, CURS_FG_COLOR, &cursor, |canvas, t| {
         let tq = t.query();
         let w : i32 = if max_w < (tq.width as i32) { max_w } else { tq.width as i32 };
 
@@ -508,9 +588,10 @@ fn draw_bg_text_cursor(
         ).map_err(|e| e.to_string()).unwrap();
 
         xs += w;
+        (w as u32, tq.height)
     });
 
-    with_text2texture(font, canvas, color, &end, |canvas, t| {
+    let (w3, h3) = with_text2texture(font, canvas, color, &end, |canvas, t| {
         let tq = t.query();
         let w : i32 = if max_w < (tq.width as i32) { max_w } else { tq.width as i32 };
 
@@ -520,7 +601,14 @@ fn draw_bg_text_cursor(
             Some(Rect::new(0, 0, w as u32, tq.height)),
             Some(Rect::new(xs, y, w as u32, tq.height))
         ).map_err(|e| e.to_string()).unwrap();
+        (w as u32, tq.height)
     });
+
+    let mut max_h = h1;
+    if max_h < h2 { max_h = h2; };
+    if max_h < h3 { max_h = h3; };
+
+    (w1 + w2 + w3, max_h)
 }
 
 pub fn main() -> Result<(), String> {
@@ -557,6 +645,7 @@ pub fn main() -> Result<(), String> {
         right:       Vec::new(),
         log:         LogSheet::new(),
         input_line:  TextInputLine::new(),
+        mode:        FileManagerMode::Normal,
     };
 
     let fm = Rc::new(RefCell::new(fm));
@@ -597,8 +686,14 @@ pub fn main() -> Result<(), String> {
         if let Some(event) = event {
             let mut fm = fm.borrow_mut();
             match event {
-                Event::Quit {..} | Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
+                Event::Quit {..} => {
                     break 'running
+                },
+                Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
+                    fm.action(FileManagerAction::SwitchMode(FileManagerMode::Normal));
+                },
+                Event::KeyDown { keycode: Some(Keycode::I), .. } => {
+                    fm.action(FileManagerAction::SwitchMode(FileManagerMode::CommandLine));
                 },
                 Event::KeyDown { keycode: Some(Keycode::Tab), .. } => {
                     fm.toggle_active_side();
@@ -619,16 +714,19 @@ pub fn main() -> Result<(), String> {
                     fm.process_page_control(PageControl::Click((x, y)), Some((x, y)));
                 },
                 Event::TextInput { text, .. } => {
-                    println!("TEXT: {}", text);
+                    println!("TextInput: {}", text);
+                    fm.enter_text(&text);
                 },
                 Event::MouseWheel { y, direction: dir, .. } => {
                     match dir {
                         sdl2::mouse::MouseWheelDirection::Normal => {
-                            fm.process_page_control(PageControl::Scroll(-y), Some((mouse_state.x(), mouse_state.y())));
+                            fm.process_page_control(PageControl::Scroll(-y),
+                            Some((mouse_state.x(), mouse_state.y())));
                             println!("DIR NORMAL");
                         },
                         sdl2::mouse::MouseWheelDirection::Flipped => {
-                            fm.process_page_control(PageControl::Scroll(y), Some((mouse_state.x(), mouse_state.y())));
+                            fm.process_page_control(PageControl::Scroll(y),
+                            Some((mouse_state.x(), mouse_state.y())));
                             println!("DIR FLOP");
                         },
                         _ => {}
