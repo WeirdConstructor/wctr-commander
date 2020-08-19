@@ -52,33 +52,18 @@ pub enum FileManagerSide {
     Right,
 }
 
-#[derive(Debug, PartialEq, Copy, Clone)]
-pub enum FileManagerMode {
-    Normal,
-    CommandLine,
-}
-
-impl FileManagerMode {
-    fn to_prompt(&self) -> &str {
-        match self {
-            FileManagerMode::Normal      => "[NORMAL]",
-            FileManagerMode::CommandLine => "> ",
-        }
-    }
-}
-
 pub struct FileManager {
     left:           std::vec::Vec<PathSheet>,
     right:          std::vec::Vec<PathSheet>,
     log:            LogSheet,
     active_side:    FileManagerSide,
     input_line:     TextInputLine,
-    // TODO: Replace mode with "prompt" and enable/disable input line.
-    mode:           FileManagerMode,
+    prompt:         String,
 }
 
 enum FileManagerAction {
-    SwitchMode(FileManagerMode),
+    SetPrompt(String),
+    TextInput(TextInputAction),
 }
 
 enum PanePos {
@@ -132,19 +117,12 @@ impl FileManager {
 
     fn action(&mut self, fmact: FileManagerAction) {
         match fmact {
-            FileManagerAction::SwitchMode(mode) => {
-                self.mode = mode;
+            FileManagerAction::SetPrompt(prompt) => {
+                self.prompt = prompt;
             },
-        }
-    }
-
-    fn enter_text(&mut self, txt: &str) {
-        // TODO: Implement the mode that redirects key presses into the input
-        //       handling! We need an extra layer for this!
-        //       Keys => WLambda map to actions => FileManager
-        if let FileManagerMode::CommandLine = self.mode {
-            self.input_line.handle_input(
-                TextInputAction::Insert(txt.to_string()));
+            FileManagerAction::TextInput(txtact) => {
+                self.input_line.handle_input(txtact);
+            },
         }
     }
 
@@ -229,48 +207,30 @@ impl FileManager {
             0, log_offs_y, win_size.0, log_height,
             true);
 
-        let input_line_xoffs = match self.mode {
-            FileManagerMode::Normal => {
-                let (w, _h) =
-                    draw_bg_text(
-                        &mut gui_painter.canvas,
-                        &mut gui_painter.font.borrow_mut(),
-                        NORM_FG_COLOR,
-                        NORM_BG_COLOR,
-                        0, log_offs_y + (log_height as i32),
-                        win_size.0 as i32, 20, self.mode.to_prompt());
-                w
-            },
-            FileManagerMode::CommandLine => {
-                let (w, _h) =
-                    draw_bg_text(
-                        &mut gui_painter.canvas,
-                        &mut gui_painter.font.borrow_mut(),
-                        NORM_FG_COLOR,
-                        NORM_BG_COLOR,
-                        0, log_offs_y + (log_height as i32),
-                        win_size.0 as i32, 20, self.mode.to_prompt());
-                w
-            },
-        };
-
-        match self.mode {
-            FileManagerMode::Normal => {
-            },
-            FileManagerMode::CommandLine => {
-                let (cursor_pos, scroll_offs, line_txt) =
-                    self.input_line.get_line_info();
-                draw_bg_text_cursor(
+        let input_line_xoffs = {
+            let (w, _h) =
+                draw_bg_text(
                     &mut gui_painter.canvas,
                     &mut gui_painter.font.borrow_mut(),
                     NORM_FG_COLOR,
                     NORM_BG_COLOR,
-                    input_line_xoffs as i32,
-                    log_offs_y + (log_height as i32),
-                    win_size.0 as i32 - input_line_xoffs as i32,
-                    20, line_txt, cursor_pos);
-            }
-        }
+                    0, log_offs_y + (log_height as i32),
+                    win_size.0 as i32, 20, &self.prompt);
+            w
+        };
+
+        let (cursor_pos, scroll_offs, line_txt) =
+            self.input_line.get_line_info();
+
+        draw_bg_text_cursor(
+            &mut gui_painter.canvas,
+            &mut gui_painter.font.borrow_mut(),
+            NORM_FG_COLOR,
+            NORM_BG_COLOR,
+            input_line_xoffs as i32,
+            log_offs_y + (log_height as i32),
+            win_size.0 as i32 - input_line_xoffs as i32,
+            20, line_txt, cursor_pos);
     }
 }
 
@@ -645,7 +605,7 @@ pub fn main() -> Result<(), String> {
         right:       Vec::new(),
         log:         LogSheet::new(),
         input_line:  TextInputLine::new(),
-        mode:        FileManagerMode::Normal,
+        prompt:      String::from(""),
     };
 
     let fm = Rc::new(RefCell::new(fm));
@@ -677,6 +637,8 @@ pub fn main() -> Result<(), String> {
     let pth = std::path::Path::new("..");
     fm.borrow_mut().open_path_in(pth, PanePos::RightTab);
 
+    let mut textin = false;
+
     let mut last_frame = Instant::now();
     let mut is_first = true;
     'running: loop {
@@ -690,10 +652,10 @@ pub fn main() -> Result<(), String> {
                     break 'running
                 },
                 Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                    fm.action(FileManagerAction::SwitchMode(FileManagerMode::Normal));
+                    textin = false;
                 },
                 Event::KeyDown { keycode: Some(Keycode::I), .. } => {
-                    fm.action(FileManagerAction::SwitchMode(FileManagerMode::CommandLine));
+                    textin = true;
                 },
                 Event::KeyDown { keycode: Some(Keycode::Tab), .. } => {
                     fm.toggle_active_side();
@@ -715,7 +677,11 @@ pub fn main() -> Result<(), String> {
                 },
                 Event::TextInput { text, .. } => {
                     println!("TextInput: {}", text);
-                    fm.enter_text(&text);
+                    if textin {
+                        fm.action(
+                            FileManagerAction::TextInput(
+                                TextInputAction::Insert(text)));
+                    }
                 },
                 Event::MouseWheel { y, direction: dir, .. } => {
                     match dir {
