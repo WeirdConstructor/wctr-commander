@@ -653,9 +653,13 @@ pub fn main() -> Result<(), String> {
                 },
                 Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
                     textin = false;
+                    fm.action(
+                        FileManagerAction::SetPrompt(String::from("[NORMAL]")));
                 },
                 Event::KeyDown { keycode: Some(Keycode::I), .. } => {
                     textin = true;
+                    fm.action(
+                        FileManagerAction::SetPrompt(String::from("> ")));
                 },
                 Event::KeyDown { keycode: Some(Keycode::Tab), .. } => {
                     fm.toggle_active_side();
