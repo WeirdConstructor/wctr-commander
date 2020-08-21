@@ -53,16 +53,17 @@ pub enum FileManagerSide {
 }
 
 pub struct FileManager {
-    left:           std::vec::Vec<PathSheet>,
-    right:          std::vec::Vec<PathSheet>,
-    log:            LogSheet,
-    active_side:    FileManagerSide,
-    input_line:     TextInputLine,
-    prompt:         String,
+    left:               std::vec::Vec<PathSheet>,
+    right:              std::vec::Vec<PathSheet>,
+    log:                LogSheet,
+    active_side:        FileManagerSide,
+    input_line:         TextInputLine,
+    prompt:             String,
+    show_input_line:    bool,
 }
 
 enum FileManagerAction {
-    SetPrompt(String),
+    SetPrompt(String, bool),
     TextInput(TextInputAction),
 }
 
@@ -117,8 +118,9 @@ impl FileManager {
 
     fn action(&mut self, fmact: FileManagerAction) {
         match fmact {
-            FileManagerAction::SetPrompt(prompt) => {
-                self.prompt = prompt;
+            FileManagerAction::SetPrompt(prompt, show) => {
+                self.prompt          = prompt;
+                self.show_input_line = show;
             },
             FileManagerAction::TextInput(txtact) => {
                 self.input_line.handle_input(txtact);
@@ -219,18 +221,20 @@ impl FileManager {
             w
         };
 
-        let (cursor_pos, scroll_offs, line_txt) =
-            self.input_line.get_line_info();
+        if self.show_input_line {
+            let (cursor_pos, scroll_offs, line_txt) =
+                self.input_line.get_line_info();
 
-        draw_bg_text_cursor(
-            &mut gui_painter.canvas,
-            &mut gui_painter.font.borrow_mut(),
-            NORM_FG_COLOR,
-            NORM_BG_COLOR,
-            input_line_xoffs as i32,
-            log_offs_y + (log_height as i32),
-            win_size.0 as i32 - input_line_xoffs as i32,
-            20, line_txt, cursor_pos);
+            draw_bg_text_cursor(
+                &mut gui_painter.canvas,
+                &mut gui_painter.font.borrow_mut(),
+                NORM_FG_COLOR,
+                NORM_BG_COLOR,
+                input_line_xoffs as i32,
+                log_offs_y + (log_height as i32),
+                win_size.0 as i32 - input_line_xoffs as i32,
+                20, line_txt, cursor_pos);
+        }
     }
 }
 
@@ -571,6 +575,54 @@ fn draw_bg_text_cursor(
     (w1 + w2 + w3, max_h)
 }
 
+fn sdl2keydown2str(event: &sdl2::event::Event) -> String {
+    match event {
+        Event::KeyDown { keycode, keymod, .. } => {
+            let mut modstr = String::new();
+            if keymod.contains(sdl2::keyboard::Mod::LSHIFTMOD) {
+                modstr += "SHIFT+";
+            } else if keymod.contains(sdl2::keyboard::Mod::RSHIFTMOD) {
+                modstr += "SHIFT+";
+            }
+
+            if keymod.contains(sdl2::keyboard::Mod::LCTRLMOD) {
+                modstr += "CTRL+";
+            } else if keymod.contains(sdl2::keyboard::Mod::RCTRLMOD) {
+                modstr += "CTRL+";
+            }
+
+            if keymod.contains(sdl2::keyboard::Mod::LALTMOD) {
+                modstr += "ALT+";
+            } else if keymod.contains(sdl2::keyboard::Mod::RALTMOD) {
+                modstr += "ALT+";
+            }
+
+            if keymod.contains(sdl2::keyboard::Mod::LGUIMOD) {
+                modstr += "GUI+";
+            } else if keymod.contains(sdl2::keyboard::Mod::RGUIMOD) {
+                modstr += "GUI+";
+            }
+
+            if keymod.contains(sdl2::keyboard::Mod::CAPSMOD) {
+                modstr += "CAPS+";
+            }
+
+            if keymod.contains(sdl2::keyboard::Mod::MODEMOD) {
+                modstr += "MODE+";
+            }
+
+            if let Some(keycode) = keycode {
+                modstr += &keycode.to_string();
+            } else {
+                return String::new();
+            }
+
+            modstr
+        },
+        _ => String::new(),
+    }
+}
+
 pub fn main() -> Result<(), String> {
     let sdl_context = sdl2::init()?;
     let video_subsystem = sdl_context.video()?;
@@ -600,12 +652,13 @@ pub fn main() -> Result<(), String> {
     };
 
     let fm = FileManager {
-        active_side: FileManagerSide::Left,
-        left:        Vec::new(),
-        right:       Vec::new(),
-        log:         LogSheet::new(),
-        input_line:  TextInputLine::new(),
-        prompt:      String::from(""),
+        active_side:        FileManagerSide::Left,
+        left:               Vec::new(),
+        right:              Vec::new(),
+        log:                LogSheet::new(),
+        input_line:         TextInputLine::new(),
+        prompt:             String::from("[NORMAL]"),
+        show_input_line:    false,
     };
 
     let fm = Rc::new(RefCell::new(fm));
@@ -638,6 +691,7 @@ pub fn main() -> Result<(), String> {
     fm.borrow_mut().open_path_in(pth, PanePos::RightTab);
 
     let mut textin = false;
+    let mut ignore_next_text = false;
 
     let mut last_frame = Instant::now();
     let mut is_first = true;
@@ -647,6 +701,15 @@ pub fn main() -> Result<(), String> {
         let mouse_state = event_pump.mouse_state();
         if let Some(event) = event {
             let mut fm = fm.borrow_mut();
+            println!("EV: {:?}", event);
+            match event {
+                Event::KeyDown { keycode, keymod, .. } => {
+                    let keystr = sdl2keydown2str(&event);
+                    println!("STR KEY: '{}'", keystr);
+                },
+                _ => {},
+            }
+
             match event {
                 Event::Quit {..} => {
                     break 'running
@@ -654,12 +717,17 @@ pub fn main() -> Result<(), String> {
                 Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
                     textin = false;
                     fm.action(
-                        FileManagerAction::SetPrompt(String::from("[NORMAL]")));
+                        FileManagerAction::SetPrompt(
+                            String::from("[NORMAL]"), false));
                 },
                 Event::KeyDown { keycode: Some(Keycode::I), .. } => {
-                    textin = true;
-                    fm.action(
-                        FileManagerAction::SetPrompt(String::from("> ")));
+                    if !textin {
+                        textin           = true;
+                        ignore_next_text = true;
+                        fm.action(
+                            FileManagerAction::SetPrompt(
+                                String::from("> "), true));
+                    }
                 },
                 Event::KeyDown { keycode: Some(Keycode::Tab), .. } => {
                     fm.toggle_active_side();
@@ -681,10 +749,14 @@ pub fn main() -> Result<(), String> {
                 },
                 Event::TextInput { text, .. } => {
                     println!("TextInput: {}", text);
-                    if textin {
-                        fm.action(
-                            FileManagerAction::TextInput(
-                                TextInputAction::Insert(text)));
+                    if !ignore_next_text {
+                        if textin {
+                            fm.action(
+                                FileManagerAction::TextInput(
+                                    TextInputAction::Insert(text)));
+                        }
+                    } else {
+                        ignore_next_text = false;
                     }
                 },
                 Event::MouseWheel { y, direction: dir, .. } => {
