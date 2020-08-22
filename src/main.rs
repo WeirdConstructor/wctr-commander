@@ -80,13 +80,18 @@ enum PanePos {
 struct WLCallbacks {
     ctx:        Rc<RefCell<EvalContext>>,
     cb_input:   VVal,
+    fm_api:     VVal,
 }
 
 impl WLCallbacks {
-    pub fn on_input(&mut self, fm: &mut FileManager, keybind: String) {
+    pub fn on_input(&mut self, keybind: String) {
         self.ctx.borrow_mut()
-            .call(&self.cb_input, &[VVal::new_str_mv(keybind)])
+            .call(&self.cb_input, &[self.fm_api.clone(), VVal::new_str_mv(keybind)])
             .expect("No error in 'on_input' callback");
+    }
+
+    pub fn set_fm_api(&mut self, fm: VVal) {
+        self.fm_api = fm;
     }
 }
 
@@ -112,7 +117,8 @@ fn init_wlambda() -> WLCallbacks {
                     .get_global_var("on_input")
                     .expect("'on_input' global callback in main.wl");
             WLCallbacks {
-                ctx:      Rc::new(RefCell::new(wl_eval_ctx)),
+                ctx:        Rc::new(RefCell::new(wl_eval_ctx)),
+                fm_api:     VVal::None,
                 cb_input,
             }
         },
@@ -686,7 +692,21 @@ pub fn main() -> Result<(), String> {
     };
 
     let fm = Rc::new(RefCell::new(fm));
-    let fma : Rc<RefCell<std::any::Any>> = fm.clone();
+
+    let fm_actions : Rc<RefCell<Vec<FileManagerAction>>> =
+        Rc::new(RefCell::new(vec![]));
+
+    let fm_api = VVal::map();
+
+    wlcbs.set_fm_api(fm_api.clone());
+
+    set_vval_method!(fm_api, fm_actions, set_prompt, Some(2), Some(2), env, _argc, {
+        fm_actions.borrow_mut().push(
+            FileManagerAction::SetPrompt(
+                env.arg(0).s(),
+                env.arg(1).b()));
+        Ok(VVal::None)
+    });
 
     fm.borrow_mut().log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 1"));
     fm.borrow_mut().log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 2"));
@@ -729,9 +749,15 @@ pub fn main() -> Result<(), String> {
                 Event::KeyDown { keycode, keymod, .. } => {
                     let keystr = sdl2keydown2str(&event);
                     println!("STR KEY: '{}'", keystr);
-                    wlcbs.on_input(&mut fm, keystr);
+                    wlcbs.on_input(keystr);
                 },
                 _ => {},
+            }
+
+            let mut vecref = fm_actions.borrow_mut();
+            while !vecref.is_empty() {
+                let act = vecref.pop().expect("something in the action vec");
+                fm.action(act);
             }
 
             match event {
