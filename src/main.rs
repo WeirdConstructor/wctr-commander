@@ -8,6 +8,8 @@ use std::rc::Rc;
 use std::cell::RefCell;
 use std::time::{Instant};
 
+use wlambda::*;
+
 mod defs;
 mod cursor;
 mod fm_page;
@@ -75,27 +77,47 @@ enum PanePos {
 //fn wlambda_bind(genv: &mut GlobalEnv, fm: Rc<RefCell<FileManager>>) {
 //}
 
-fn init_wlambda(fm: Rc<RefCell<std::any::Any>>) -> EvalContext {
+struct WLCallbacks {
+    ctx:        Rc<RefCell<EvalContext>>,
+    cb_input:   VVal,
+}
+
+impl WLCallbacks {
+    pub fn on_input(&mut self, fm: &mut FileManager, keybind: String) {
+        self.ctx.borrow_mut()
+            .call(&self.cb_input, &[VVal::new_str_mv(keybind)])
+            .expect("No error in 'on_input' callback");
+    }
+}
+
+fn init_wlambda() -> WLCallbacks {
     let genv = GlobalEnv::new_default();
 
 //    wlambda_bind(&mut genv.borrow_mut(), fm.clone());
 
-    let lfmr =
-        std::rc::Rc::new(std::cell::RefCell::new(
-            wlambda::compiler::LocalFileModuleResolver::new()));
-    genv.borrow_mut().set_resolver(lfmr);
-    let mut wl_eval_ctx = EvalContext::new_with_user(genv, fm);
+//    let lfmr =
+//        std::rc::Rc::new(std::cell::RefCell::new(
+//            wlambda::compiler::LocalFileModuleResolver::new()));
+//    genv.borrow_mut().set_resolver(lfmr);
+    let mut wl_eval_ctx = EvalContext::new_default();
 
     match wl_eval_ctx.eval_file("main.wl") {
         Ok(v) => {
             if v.is_err() {
                 panic!(format!("'main.wl' SCRIPT ERROR: {}", v.s()));
             }
+
+            let cb_input =
+                    wl_eval_ctx
+                    .get_global_var("on_input")
+                    .expect("'on_input' global callback in main.wl");
+            WLCallbacks {
+                ctx:      Rc::new(RefCell::new(wl_eval_ctx)),
+                cb_input,
+            }
         },
         Err(e) => { panic!(format!("'main.wl' SCRIPT ERROR: {}", e)); }
     }
-
-    wl_eval_ctx
 }
 
 impl FileManager {
@@ -651,6 +673,8 @@ pub fn main() -> Result<(), String> {
         font: Rc::new(RefCell::new(font)),
     };
 
+    let mut wlcbs = init_wlambda();
+
     let fm = FileManager {
         active_side:        FileManagerSide::Left,
         left:               Vec::new(),
@@ -663,7 +687,6 @@ pub fn main() -> Result<(), String> {
 
     let fm = Rc::new(RefCell::new(fm));
     let fma : Rc<RefCell<std::any::Any>> = fm.clone();
-    let ectx = init_wlambda(fma);
 
     fm.borrow_mut().log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 1"));
     fm.borrow_mut().log.append_msg(String::from("FOo bar foiwe jfowi fewoi fewoif jewof weof iewjo jfewo iwejf oiwejfo iwejf owiejf oweifj weoi fjweoi w 2"));
@@ -706,6 +729,7 @@ pub fn main() -> Result<(), String> {
                 Event::KeyDown { keycode, keymod, .. } => {
                     let keystr = sdl2keydown2str(&event);
                     println!("STR KEY: '{}'", keystr);
+                    wlcbs.on_input(&mut fm, keystr);
                 },
                 _ => {},
             }
