@@ -80,6 +80,7 @@ enum PanePos {
 struct WLCallbacks {
     ctx:        Rc<RefCell<EvalContext>>,
     cb_input:   VVal,
+    cb_text:    VVal,
     fm_api:     VVal,
 }
 
@@ -88,6 +89,12 @@ impl WLCallbacks {
         self.ctx.borrow_mut()
             .call(&self.cb_input, &[self.fm_api.clone(), VVal::new_str_mv(keybind)])
             .expect("No error in 'on_input' callback");
+    }
+
+    pub fn on_text(&mut self, txt: String) {
+        self.ctx.borrow_mut()
+            .call(&self.cb_text, &[self.fm_api.clone(), VVal::new_str_mv(txt)])
+            .expect("No error in 'on_text' callback");
     }
 
     pub fn set_fm_api(&mut self, fm: VVal) {
@@ -116,10 +123,15 @@ fn init_wlambda() -> WLCallbacks {
                     wl_eval_ctx
                     .get_global_var("on_input")
                     .expect("'on_input' global callback in main.wl");
+            let cb_text =
+                    wl_eval_ctx
+                    .get_global_var("on_text")
+                    .expect("'on_text' global callback in main.wl");
             WLCallbacks {
                 ctx:        Rc::new(RefCell::new(wl_eval_ctx)),
                 fm_api:     VVal::None,
                 cb_input,
+                cb_text,
             }
         },
         Err(e) => { panic!(format!("'main.wl' SCRIPT ERROR: {}", e)); }
@@ -703,8 +715,22 @@ pub fn main() -> Result<(), String> {
     set_vval_method!(fm_api, fm_actions, set_prompt, Some(2), Some(2), env, _argc, {
         fm_actions.borrow_mut().push(
             FileManagerAction::SetPrompt(
-                env.arg(0).s(),
+                env.arg(0).s_raw(),
                 env.arg(1).b()));
+        Ok(VVal::None)
+    });
+
+    set_vval_method!(fm_api, fm_actions, text_insert, Some(1), Some(1), env, _argc, {
+        fm_actions.borrow_mut().push(
+            FileManagerAction::TextInput(
+                TextInputAction::Insert(env.arg(0).s_raw())));
+        Ok(VVal::None)
+    });
+
+    set_vval_method!(fm_api, fm_actions, text_replace, Some(1), Some(1), env, _argc, {
+        fm_actions.borrow_mut().push(
+            FileManagerAction::TextInput(
+                TextInputAction::Replace(env.arg(0).s_raw())));
         Ok(VVal::None)
     });
 
@@ -733,9 +759,6 @@ pub fn main() -> Result<(), String> {
     let pth = std::path::Path::new("..");
     fm.borrow_mut().open_path_in(pth, PanePos::RightTab);
 
-    let mut textin = false;
-    let mut ignore_next_text = false;
-
     let mut last_frame = Instant::now();
     let mut is_first = true;
     'running: loop {
@@ -745,11 +768,14 @@ pub fn main() -> Result<(), String> {
         if let Some(event) = event {
             let mut fm = fm.borrow_mut();
             println!("EV: {:?}", event);
-            match event {
+            match &event {
                 Event::KeyDown { keycode, keymod, .. } => {
                     let keystr = sdl2keydown2str(&event);
                     println!("STR KEY: '{}'", keystr);
                     wlcbs.on_input(keystr);
+                },
+                Event::TextInput { text, .. } => {
+                    wlcbs.on_text(text.to_string());
                 },
                 _ => {},
             }
@@ -763,21 +789,6 @@ pub fn main() -> Result<(), String> {
             match event {
                 Event::Quit {..} => {
                     break 'running
-                },
-                Event::KeyDown { keycode: Some(Keycode::Escape), .. } => {
-                    textin = false;
-                    fm.action(
-                        FileManagerAction::SetPrompt(
-                            String::from("[NORMAL]"), false));
-                },
-                Event::KeyDown { keycode: Some(Keycode::I), .. } => {
-                    if !textin {
-                        textin           = true;
-                        ignore_next_text = true;
-                        fm.action(
-                            FileManagerAction::SetPrompt(
-                                String::from("> "), true));
-                    }
                 },
                 Event::KeyDown { keycode: Some(Keycode::Tab), .. } => {
                     fm.toggle_active_side();
@@ -796,18 +807,6 @@ pub fn main() -> Result<(), String> {
                 },
                 Event::MouseButtonDown { x, y, .. } => {
                     fm.process_page_control(PageControl::Click((x, y)), Some((x, y)));
-                },
-                Event::TextInput { text, .. } => {
-                    println!("TextInput: {}", text);
-                    if !ignore_next_text {
-                        if textin {
-                            fm.action(
-                                FileManagerAction::TextInput(
-                                    TextInputAction::Insert(text)));
-                        }
-                    } else {
-                        ignore_next_text = false;
-                    }
                 },
                 Event::MouseWheel { y, direction: dir, .. } => {
                     match dir {
